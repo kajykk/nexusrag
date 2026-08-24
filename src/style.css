@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+:root {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color-scheme: dark;
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: #0A0A0F;
+  color: #FAFAFA;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2A2A38;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3A3A4A;
+}
+
+/* 通用工具类 */
+@layer components {
+  .glass-card {
+    @apply bg-bg-card/60 backdrop-blur-xl border border-border-subtle rounded-2xl;
+  }
+  .gradient-text {
+    @apply bg-gradient-cv bg-clip-text text-transparent;
+    background-size: 200% 200%;
+    animation: gradientShift 8s ease infinite;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg
+           bg-gradient-cv text-white font-medium
+           hover:shadow-lg hover:shadow-accent-cyan/30 transition-all
+           active:scale-95;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-lg
+           border border-border hover:bg-bg-hover text-text-primary transition-all;
+  }
+  .input-field {
+    @apply w-full px-4 py-2.5 rounded-lg bg-bg-elevate border border-border-subtle
+           text-text-primary placeholder-text-muted
+           focus:outline-none focus:border-accent-cyan focus:ring-1 focus:ring-accent-cyan/50
+           transition-colors;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium;
+  }
+  .badge-cyan {
+    @apply bg-accent-cyan/10 text-accent-cyan border border-accent-cyan/30;
+  }
+  .badge-violet {
+    @apply bg-accent-violet/10 text-accent-violet border border-accent-violet/30;
+  }
+  .badge-success {
+    @apply bg-emerald-500/10 text-emerald-400 border border-emerald-500/30;
+  }
+  .badge-warn {
+    @apply bg-amber-500/10 text-amber-400 border border-amber-500/30;
+  }
+  .badge-error {
+    @apply bg-red-500/10 text-red-400 border border-red-500/30;
+  }
+}
+
+/* Markdown 渲染样式 */
+.markdown-body {
+  @apply text-text-primary leading-relaxed;
+}
+.markdown-body h1 {
+  @apply text-2xl font-bold font-display mt-6 mb-3;
+}
+.markdown-body h2 {
+  @apply text-xl font-semibold font-display mt-5 mb-2;
+}
+.markdown-body h3 {
+  @apply text-lg font-medium mt-4 mb-2;
+}
+.markdown-body p {
+  @apply my-3;
+}
+.markdown-body ul {
+  @apply list-disc pl-6 my-3;
+}
+.markdown-body ol {
+  @apply list-decimal pl-6 my-3;
+}
+.markdown-body li {
+  @apply my-1;
+}
+.markdown-body code {
+  @apply font-mono text-sm bg-bg-elevate px-1.5 py-0.5 rounded text-accent-cyan;
+}
+.markdown-body pre {
+  @apply bg-bg-elevate p-4 rounded-lg overflow-x-auto my-4 border border-border-subtle;
+}
+.markdown-body pre code {
+  @apply bg-transparent text-text-primary p-0;
+}
+.markdown-body blockquote {
+  @apply border-l-4 border-accent-violet pl-4 italic text-text-secondary my-4;
+}
+.markdown-body a {
+  @apply text-accent-cyan underline hover:text-accent-violet;
+}
+.markdown-body table {
+  @apply w-full border-collapse my-4;
+}
+.markdown-body th,
+.markdown-body td {
+  @apply border border-border-subtle px-3 py-2 text-left;
+}
+.markdown-body th {
+  @apply bg-bg-elevate font-semibold;
+}
+
+/* 引用标记 */
+.citation-ref {
+  @apply inline-flex items-center justify-center
+         min-w-[20px] h-5 px-1 mx-0.5
+         text-xs font-mono font-medium
+         bg-accent-cyan/20 text-accent-cyan
+         border border-accent-cyan/40
+         rounded cursor-pointer
+         hover:bg-accent-cyan hover:text-white
+         transition-colors align-middle;
+}

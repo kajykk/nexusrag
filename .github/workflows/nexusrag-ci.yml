@@ -1,0 +1,40 @@
+name: NexusRAG CI
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'api/**'
+      - 'src/**'
+      - 'tests/**'
+      - 'package.json'
+      - 'tsconfig.json'
+      - 'eslint.config.js'
+      - 'vitest.config.ts'
+      - '.github/workflows/nexusrag-ci.yml'
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npx vue-tsc --noEmit
+
+      - name: ESLint
+        run: npx eslint .
+
+      - name: Vitest
+        run: npx vitest run
