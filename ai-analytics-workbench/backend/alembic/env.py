@@ -4,14 +4,14 @@
 使用同步 SQLAlchemy 引擎。
 """
 
-from logging.config import fileConfig
-
-from alembic import context
-from sqlalchemy import engine_from_config, pool
-
 # 确保 backend/ 在 sys.path 中（alembic 从 backend/ 目录执行）
 import os
 import sys
+from logging.config import fileConfig
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 

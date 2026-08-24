@@ -15,13 +15,24 @@ from app.utils.db import (
     get_table_preview,
     load_table_to_dataframe,
 )
-from app.utils.sandbox import _validate_sandbox_code, safe_execute_pandas
+from app.utils.sandbox import (
+    ERROR_EXECUTION,
+    ERROR_OK,
+    ERROR_TIMEOUT,
+    SandboxTimeoutError,
+    _validate_sandbox_code,
+    safe_execute_pandas,
+)
 from app.utils.schema import _to_jsonable, infer_dataframe_schema, to_jsonable
 
 __all__ = [
     "_to_jsonable",
     "_validate_sandbox_code",
     "_validate_table_name",
+    "ERROR_EXECUTION",
+    "ERROR_OK",
+    "ERROR_TIMEOUT",
+    "SandboxTimeoutError",
     "dataframe_to_pg",
     "drop_table_if_exists",
     "get_table_preview",

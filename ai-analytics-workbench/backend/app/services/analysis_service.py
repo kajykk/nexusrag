@@ -1,6 +1,7 @@
 """分析服务：LLM 调用、代码执行、图表渲染、进度推送。"""
 
 import json
+import os
 from datetime import datetime
 
 from sqlalchemy.orm import Session
@@ -12,6 +13,7 @@ from app.models import Analysis, Dataset, User
 from app.services.dataset_service import get_dataset
 from app.services.ownership import apply_visible, is_visible
 from app.utils import load_table_to_dataframe, safe_execute_pandas
+from app.utils.sandbox import ERROR_TIMEOUT
 from app.visualization import render_chart
 from app.ws.pubsub import publish_progress
 
@@ -110,27 +112,31 @@ def execute_analysis(analysis_id: int) -> dict:
         analysis.generated_code = code
         analysis.code_type = llm_result.get("code_type", "python")
 
-        # 3. 执行代码
+        # 3. 执行代码（进程级隔离沙箱，见 app/utils/sandbox.py）
         publish_progress(analysis_id, "running", 70, "执行分析代码")
-        exec_result = safe_execute_pandas(code, df)
+        reports_dir = os.path.join(os.getcwd(), "reports")
+        exec_result = safe_execute_pandas(code, df, artifacts_dir=reports_dir)
         if exec_result["error"]:
+            timed_out = exec_result.get("error_type") == ERROR_TIMEOUT
             logger.warning(
-                "analysis.code_failed", extra={"analysis_id": analysis_id, "error": exec_result["error"][:200]}
+                "analysis.code_failed",
+                extra={"analysis_id": analysis_id, "timeout": timed_out, "error": exec_result["error"][:200]},
             )
             analysis.status = "failed"
             analysis.error_message = exec_result["error"]
             analysis.completed_at = datetime.utcnow()
             db.commit()
-            publish_progress(analysis_id, "failed", 100, "代码执行失败", {"error": exec_result["error"]})
+            message = "代码执行超时，已强制终止" if timed_out else "代码执行失败"
+            publish_progress(analysis_id, "failed", 100, message, {"error": exec_result["error"]})
             return {"error": exec_result["error"]}
 
         result_data = exec_result["result"]
         analysis.result_data = json.dumps({"result": result_data, "summary": summary}, ensure_ascii=False)
         analysis.chart_config = json.dumps(chart_config, ensure_ascii=False)
 
-        # 4. 渲染图表
+        # 4. 渲染图表（沙箱内若已产出 PNG 则直接采用，否则走服务端渲染）
         publish_progress(analysis_id, "running", 85, "渲染图表")
-        chart_path = render_chart(result_data, chart_type, analysis_id, chart_config)
+        chart_path = exec_result.get("chart_png_path") or render_chart(result_data, chart_type, analysis_id, chart_config)
         analysis.chart_image = chart_path
 
         # 5. 完成

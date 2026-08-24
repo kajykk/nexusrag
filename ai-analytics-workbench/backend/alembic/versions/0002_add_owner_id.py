@@ -11,16 +11,16 @@ Create Date: 2026-08-24 00:00:00
 
 使用 batch_alter_table，兼容 SQLite（不支持 ALTER ADD CONSTRAINT）与 PostgreSQL。
 """
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 revision: str = "0002"
-down_revision: Union[str, None] = "0001"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "0001"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def _add_owner(table: str) -> None:

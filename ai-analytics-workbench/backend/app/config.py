@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     UPLOAD_DIR: str = "./uploads"
 
+    # 沙箱（进程级隔离执行用户分析代码）
+    SANDBOX_TIMEOUT_SECONDS: int = 30  # 子进程墙钟超时，超时击杀整个进程树
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
