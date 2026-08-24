@@ -1,0 +1,99 @@
+"""应用配置：通过环境变量注入，支持 .env 文件。"""
+
+from functools import lru_cache
+
+from pydantic import field_validator, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# 弱默认密钥，仅在非生产环境使用
+_WEAK_SECRET_DEFAULT = "change-me-in-production"
+
+
+class Settings(BaseSettings):
+    """全局配置项。"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    # 应用
+    APP_ENV: str = "development"
+    APP_DEBUG: bool = True
+    APP_HOST: str = "0.0.0.0"
+    APP_PORT: int = 8000
+    SECRET_KEY: str = _WEAK_SECRET_DEFAULT
+
+    # 日志（P1 新增）
+    LOG_LEVEL: str = "INFO"  # DEBUG / INFO / WARNING / ERROR / CRITICAL
+    LOG_JSON: bool = False  # 生产环境推荐 true，便于 ELK/Loki 采集
+
+    # JWT 认证（P0 新增）
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_MINUTES: int = 60 * 24 * 7  # 默认 7 天
+    JWT_TOKEN_URL: str = "/api/v1/auth/login"
+
+    # 演示账号是否授予管理员权限（默认 false，降权防滥用；仅演示环境显式开启）
+    DEMO_ALLOW_ADMIN: bool = False
+
+    # 数据库
+    DATABASE_URL: str = "postgresql+psycopg://analytics:analytics123@localhost:5432/analytics_workbench"
+
+    # Redis
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: str = ""
+    CELERY_BROKER_URL: str = "redis://localhost:6379/0"
+    CELERY_RESULT_BACKEND: str = "redis://localhost:6379/1"
+
+    # LLM
+    LLM_PROVIDER: str = "openai"
+    OPENAI_API_KEY: str = ""
+    OPENAI_BASE_URL: str = "https://api.openai.com/v1"
+    LLM_MODEL: str = "gpt-4o-mini"
+
+    # 上传
+    MAX_UPLOAD_SIZE_MB: int = 50
+    UPLOAD_DIR: str = "./uploads"
+
+    # CORS
+    CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+
+    @field_validator("CORS_ORIGINS")
+    @classmethod
+    def normalize_cors(cls, v: str) -> str:
+        return v.strip()
+
+    @model_validator(mode="after")
+    def _enforce_production_secret(self) -> "Settings":
+        """生产环境必须显式设置非弱 SECRET_KEY，防止使用默认值导致 JWT 被伪造。"""
+        if self.APP_ENV == "production":
+            if not self.SECRET_KEY or self.SECRET_KEY == _WEAK_SECRET_DEFAULT:
+                raise ValueError(
+                    "生产环境（APP_ENV=production）必须通过环境变量 SECRET_KEY " "设置一个高强度密钥，禁止使用默认值。"
+                )
+        return self
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def redis_url(self) -> str:
+        auth = f":{self.REDIS_PASSWORD}@" if self.REDIS_PASSWORD else ""
+        return f"redis://{auth}{self.REDIS_HOST}:{self.REDIS_PORT}/0"
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """单例配置，避免重复读取环境变量。"""
+    return Settings()
+
+
+settings = get_settings()
