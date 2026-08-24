@@ -53,7 +53,9 @@ router.post('/register', async (req: AuthRequest, res: Response): Promise<void> 
 
     res.json({ success: true, data: { user, token } })
   } catch (err) {
-    res.status(500).json({ success: false, error: (err as Error).message })
+    // 错误细节仅记录服务端日志，不透传给客户端
+    console.error('Auth error:', err)
+    res.status(500).json({ success: false, error: '服务器内部错误，请稍后重试' })
   }
 })
 
@@ -86,7 +88,9 @@ router.post('/login', async (req: AuthRequest, res: Response): Promise<void> => 
 
     res.json({ success: true, data: { user, token } })
   } catch (err) {
-    res.status(500).json({ success: false, error: (err as Error).message })
+    // 错误细节仅记录服务端日志，不透传给客户端
+    console.error('Auth error:', err)
+    res.status(500).json({ success: false, error: '服务器内部错误，请稍后重试' })
   }
 })
 
@@ -122,7 +126,9 @@ router.post('/demo', async (_req: AuthRequest, res: Response): Promise<void> => 
     const token = generateToken({ id: user!.id, email: user!.email })
     res.json({ success: true, data: { user, token } })
   } catch (err) {
-    res.status(500).json({ success: false, error: (err as Error).message })
+    // 错误细节仅记录服务端日志，不透传给客户端
+    console.error('Auth error:', err)
+    res.status(500).json({ success: false, error: '服务器内部错误，请稍后重试' })
   }
 })
 

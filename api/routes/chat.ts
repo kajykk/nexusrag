@@ -51,9 +51,14 @@ router.get('/sessions', (req: AuthRequest, res: Response): void => {
  * 消息历史
  */
 router.get('/sessions/:sid/messages', (req: AuthRequest, res: Response): void => {
+  // JOIN 会话与知识库校验归属，防止越权读取他人会话消息（IDOR）
   const messages = db.prepare(`
-    SELECT * FROM chat_messages WHERE session_id = ? ORDER BY created_at ASC
-  `).all(req.params.sid) as ChatMessage[]
+    SELECT m.* FROM chat_messages m
+    JOIN chat_sessions s ON m.session_id = s.id
+    JOIN knowledge_bases k ON s.kb_id = k.id
+    WHERE m.session_id = ? AND k.user_id = ?
+    ORDER BY m.created_at ASC
+  `).all(req.params.sid, req.userId) as ChatMessage[]
 
   // 反序列化 citations（DB 中以 JSON 字符串存储）
   const parsed = messages.map((m): ChatMessage => ({
@@ -181,8 +186,9 @@ router.post('/sessions/:sid/messages', async (req: AuthRequest, res: Response): 
 
     send({ type: 'done', data: {} })
   } catch (err) {
+    // 错误细节仅记录在服务端日志，不透传给客户端
     console.error('Chat error:', err)
-    send({ type: 'error', data: { error: (err as Error).message } })
+    send({ type: 'error', data: { error: '服务器内部错误，请稍后重试' } })
   } finally {
     res.end()
   }

@@ -4,7 +4,7 @@ import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { chatApi, type ChatMessage } from '@/api/chat'
 import { kbApi, type KnowledgeBase } from '@/api/kb'
-import { useMarkdown } from '@/composables/useMarkdown'
+import ChatMarkdown from '@/components/ChatMarkdown.vue'
 import type { Citation } from '@/api/types'
 import {
   Sparkles, ArrowLeft, Send, Plus, Trash2, MessageSquare,
@@ -348,7 +348,11 @@ onMounted(async () => {
                   </div>
 
                   <!-- 内容 -->
-                  <div v-if="msg.content" class="markdown-body" v-html="useMarkdown(() => msg.content, () => msg.citations || []).rendered.value"></div>
+                  <ChatMarkdown
+                    v-if="msg.content"
+                    :content="msg.content"
+                    :citations="msg.citations"
+                  />
 
                   <!-- 引用 -->
                   <div v-if="msg.citations && msg.citations.length > 0 && msg.status === 'done'" class="mt-4">

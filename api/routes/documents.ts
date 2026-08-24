@@ -42,9 +42,13 @@ router.use(authMiddleware)
  * 文档列表
  */
 router.get('/', (req: AuthRequest, res: Response): void => {
+  // JOIN 知识库校验归属，防止越权列出他人知识库文档（IDOR）
   const docs = db.prepare(`
-    SELECT * FROM documents WHERE kb_id = ? ORDER BY created_at DESC
-  `).all(req.params.kbId) as Document[]
+    SELECT d.* FROM documents d
+    JOIN knowledge_bases k ON d.kb_id = k.id
+    WHERE d.kb_id = ? AND k.user_id = ?
+    ORDER BY d.created_at DESC
+  `).all(req.params.kbId, req.userId) as Document[]
 
   res.json({ success: true, data: docs })
 })
@@ -91,10 +95,11 @@ router.post('/', upload.array('files', 10), async (req: AuthRequest, res: Respon
           WHERE id = ?
         `).run(kbId, kbId)
       } catch (err) {
+        // 错误细节仅记录服务端日志，入库对外展示脱敏文案
+        console.error(`文档处理失败 ${docId}:`, err)
         db.prepare(`
           UPDATE documents SET status = 'failed', error = ? WHERE id = ?
-        `).run((err as Error).message, docId)
-        console.error(`文档处理失败 ${docId}:`, err)
+        `).run('文档处理失败，请检查文件内容后重试', docId)
       } finally {
         // 删除临时文件（忽略删除失败，文件可能已被清理）
         try { fs.unlinkSync(file.path) } catch { /* 临时文件清理失败可忽略 */ }
@@ -109,9 +114,12 @@ router.post('/', upload.array('files', 10), async (req: AuthRequest, res: Respon
  * 文档状态
  */
 router.get('/:docId/status', (req: AuthRequest, res: Response): void => {
+  // JOIN 知识库校验归属，防止越权查询他人文档状态（IDOR）
   const doc = db.prepare(`
-    SELECT id, status, chunk_count, error FROM documents WHERE id = ? AND kb_id = ?
-  `).get(req.params.docId, req.params.kbId) as { id: string; status: string; chunk_count: number; error?: string } | undefined
+    SELECT d.id, d.status, d.chunk_count, d.error FROM documents d
+    JOIN knowledge_bases k ON d.kb_id = k.id
+    WHERE d.id = ? AND d.kb_id = ? AND k.user_id = ?
+  `).get(req.params.docId, req.params.kbId, req.userId) as { id: string; status: string; chunk_count: number; error?: string } | undefined
 
   if (!doc) {
     res.status(404).json({ success: false, error: '文档不存在' })

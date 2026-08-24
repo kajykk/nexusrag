@@ -10,12 +10,14 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
+import fs from 'fs'
 import dotenv from 'dotenv'
 
 import authRoutes from './routes/auth.js'
 import kbRoutes from './routes/kb.js'
 import documentRoutes from './routes/documents.js'
 import chatRoutes from './routes/chat.js'
+import { authMiddleware } from './middleware/auth.js'
 import { config } from './config.js'
 
 // load env
@@ -43,8 +45,27 @@ app.use('/api', rateLimit({
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
-// 静态资源（上传的文件等）
-app.use('/uploads', express.static(path.resolve(config.storage.uploadPath)))
+// 上传文件受控下载：需登录后按文件名访问，不再匿名挂载静态目录
+app.get('/uploads/:filename', authMiddleware, (req: Request, res: Response): void => {
+  const filename = path.basename(req.params.filename)
+  if (filename !== req.params.filename || filename.includes('/') || filename.includes('\\')) {
+    res.status(400).json({ success: false, error: '非法文件名' })
+    return
+  }
+  const filePath = path.resolve(config.storage.uploadPath, filename)
+  const uploadRoot = path.resolve(config.storage.uploadPath)
+  if (!filePath.startsWith(uploadRoot + path.sep)) {
+    res.status(400).json({ success: false, error: '非法文件名' })
+    return
+  }
+  if (!fs.existsSync(filePath)) {
+    res.status(404).json({ success: false, error: '文件不存在' })
+    return
+  }
+  // attachment 防止浏览器内联渲染上传内容
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`)
+  res.sendFile(filePath)
+})
 
 /**
  * API 路由
@@ -69,11 +90,11 @@ app.get('/api/health', (_req: Request, res: Response): void => {
 })
 
 /**
- * 错误处理
+ * 错误处理 - 对外只返回统一脱敏文案，细节记录在服务端日志
  */
 app.use((error: Error, _req: Request, res: Response, _next: NextFunction): void => {
   console.error('[ERROR]', error)
-  res.status(500).json({ success: false, error: error.message || 'Server internal error' })
+  res.status(500).json({ success: false, error: '服务器内部错误' })
 })
 
 /**

@@ -1,6 +1,9 @@
 /**
  * BM25 关键词检索器 - 简化实现，基于 TF-IDF 思想
  * 支持中英文混合，使用 bigram 处理中文
+ *
+ * 性能：df/IDF/avgdl 统计量在 loadIndex / addToIndex / removeFromIndex 时
+ * 增量维护并缓存（BM25Stats），search 直接复用，避免每次查询全量重算。
  */
 import db from '../db.js'
 
@@ -13,6 +16,10 @@ const STOP_WORDS = new Set([
   'should', 'may', 'might', 'must', 'shall', 'can', 'need', 'dare',
   'this', 'that', 'these', 'those', 'i', 'you', 'he', 'she', 'it', 'we', 'they',
 ])
+
+// BM25 参数
+const K1 = 1.5
+const B = 0.75
 
 /**
  * 分词 - 中英文混合
@@ -41,7 +48,35 @@ interface BM25Doc {
   length: number
 }
 
-const docCache = new Map<string, BM25Doc[]>()  // kbId -> docs
+/** 预计算的索引统计量缓存 */
+interface BM25Stats {
+  df: Map<string, number>
+  idf: Map<string, number>
+  avgdl: number
+}
+
+const docCache = new Map<string, BM25Doc[]>()      // kbId -> docs
+const statsCache = new Map<string, BM25Stats>()    // kbId -> 预计算统计量
+
+/** 从文档集合全量重建统计量（仅在删除文档或初次加载时调用） */
+function buildStats(docs: BM25Doc[]): BM25Stats {
+  const N = docs.length
+  const avgdl = docs.reduce((s, d) => s + d.length, 0) / (N || 1)
+
+  const df = new Map<string, number>()
+  for (const doc of docs) {
+    for (const t of new Set(doc.tokens)) {
+      df.set(t, (df.get(t) || 0) + 1)
+    }
+  }
+
+  const idf = new Map<string, number>()
+  for (const [token, freq] of df) {
+    idf.set(token, Math.log((N - freq + 0.5) / (freq + 0.5) + 1))
+  }
+
+  return { df, idf, avgdl }
+}
 
 /**
  * 加载知识库所有 chunk 到内存索引
@@ -64,34 +99,50 @@ export function loadIndex(kbId: string): BM25Doc[] {
   }))
 
   docCache.set(kbId, docs)
+  statsCache.set(kbId, buildStats(docs))
   return docs
 }
 
 /**
- * 添加文档到 BM25 索引
+ * 添加文档到 BM25 索引（增量更新 df/avgdl/idf 缓存）
  */
 export function addToIndex(chunkId: string, docId: string, kbId: string, content: string): void {
   const docs = loadIndex(kbId)
-  docs.push({
+  const doc: BM25Doc = {
     chunkId,
     docId,
     kbId,
     tokens: tokenize(content),
     length: content.length,
-  })
+  }
+  docs.push(doc)
+
+  const stats = statsCache.get(kbId)!
+  const N = docs.length
+  const seen = new Set(doc.tokens)
+  for (const t of seen) {
+    stats.df.set(t, (stats.df.get(t) || 0) + 1)
+  }
+  // 增量重算 IDF：仅受 N 与各 token df 影响
+  for (const [token, freq] of stats.df) {
+    stats.idf.set(token, Math.log((N - freq + 0.5) / (freq + 0.5) + 1))
+  }
+  const totalLen = stats.avgdl * (N - 1) + doc.length
+  stats.avgdl = totalLen / N
 }
 
 /**
- * 删除文档对应的索引
+ * 删除文档对应的索引（触发统计量全量重建）
  */
 export function removeFromIndex(kbId: string, docId: string): void {
   const docs = loadIndex(kbId)
   const filtered = docs.filter((d) => d.docId !== docId)
   docCache.set(kbId, filtered)
+  statsCache.set(kbId, buildStats(filtered))
 }
 
 /**
- * BM25 检索
+ * BM25 检索 - 直接复用预计算的 df/IDF/avgdl 缓存
  */
 export function search(
   kbId: string,
@@ -104,27 +155,7 @@ export function search(
   const queryTokens = tokenize(query)
   if (queryTokens.length === 0) return []
 
-  const N = docs.length
-  const avgdl = docs.reduce((s, d) => s + d.length, 0) / (N || 1)
-
-  // 计算每个 token 的文档频率
-  const df = new Map<string, number>()
-  for (const doc of docs) {
-    const seen = new Set(doc.tokens)
-    for (const t of seen) {
-      df.set(t, (df.get(t) || 0) + 1)
-    }
-  }
-
-  // IDF
-  const idf = new Map<string, number>()
-  for (const [token, freq] of df) {
-    idf.set(token, Math.log((N - freq + 0.5) / (freq + 0.5) + 1))
-  }
-
-  // BM25 参数
-  const k1 = 1.5
-  const b = 0.75
+  const { idf, avgdl } = statsCache.get(kbId)!
 
   const scores = docs.map((doc) => {
     let score = 0
@@ -136,7 +167,7 @@ export function search(
       const f = tf.get(qt) || 0
       if (f === 0) continue
       const idfVal = idf.get(qt) || 0
-      const norm = (f * (k1 + 1)) / (f + k1 * (1 - b + b * (doc.length / avgdl)))
+      const norm = (f * (K1 + 1)) / (f + K1 * (1 - B + B * (doc.length / avgdl)))
       score += idfVal * norm
     }
     return { chunkId: doc.chunkId, docId: doc.docId, score }
@@ -154,7 +185,9 @@ export function search(
 export function clearCache(kbId?: string): void {
   if (kbId) {
     docCache.delete(kbId)
+    statsCache.delete(kbId)
   } else {
     docCache.clear()
+    statsCache.clear()
   }
 }

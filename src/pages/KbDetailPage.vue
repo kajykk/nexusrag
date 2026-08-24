@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useKbStore } from '@/stores/kb'
@@ -19,6 +19,7 @@ const loading = ref(false)
 const uploading = ref(false)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+let pollTimer: ReturnType<typeof setTimeout> | null = null
 
 const sortedDocs = computed(() => {
   return [...docs.value].sort((a, b) =>
@@ -56,9 +57,23 @@ async function pollStatus() {
     }
   }
   if (pending.length > 0) {
-    setTimeout(pollStatus, 2000)
+    schedulePoll()
   }
 }
+
+function schedulePoll(delay = 2000) {
+  // 避免重复轮询循环叠加
+  if (pollTimer !== null) clearTimeout(pollTimer)
+  pollTimer = setTimeout(() => {
+    pollTimer = null
+    pollStatus()
+  }, delay)
+}
+
+onUnmounted(() => {
+  if (pollTimer !== null) clearTimeout(pollTimer)
+  pollTimer = null
+})
 
 async function onFiles(files: FileList | File[]) {
   if (!files || (files as FileList).length === 0) return
@@ -67,7 +82,7 @@ async function onFiles(files: FileList | File[]) {
     const arr = Array.from(files as FileList)
     const newDocs = await docApi.upload(props.id, arr)
     docs.value.push(...newDocs)
-    setTimeout(pollStatus, 1000)
+    schedulePoll(1000)
   } catch (e: any) {
     alert(e.response?.data?.error || e.message || '上传失败')
   } finally {
@@ -122,7 +137,7 @@ onMounted(async () => {
     return
   }
   await fetchDocs()
-  setTimeout(pollStatus, 1000)
+  schedulePoll(1000)
 })
 </script>
 

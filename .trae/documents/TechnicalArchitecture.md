@@ -46,7 +46,7 @@ flowchart TB
 - **UI 组件**：Naive UI（轻量、TypeScript 友好）
 - **Markdown**：markdown-it + highlight.js + KaTeX
 - **图标**：lucide-vue-next
-- **流式**：原生 fetch + ReadableStream（替代 WebSocket，简化实现）
+- **流式**：XHR onprogress 渐进解析 SSE（兼容 webview；fetch + ReadableStream 在部分 webview 中会 ERR_ABORTED）
 
 ### 后端
 - **框架**：Express 4 + TypeScript 5

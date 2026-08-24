@@ -61,7 +61,7 @@ export async function ingestDocument(
     kbId,
     chunks.map((c, i) => ({ chunkId: c.id, vector: vectors[i] })),
   )
-  vectorStore.persist(kbId)
+  await vectorStore.persist(kbId)
 
   // 6. 更新文档状态
   db.prepare(`

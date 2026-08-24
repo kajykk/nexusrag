@@ -146,7 +146,11 @@ Vue3 前端 ⇄ Express API
 │   │   └── ChatPage.vue         # 对话页
 │   ├── router/              # 路由
 │   ├── stores/              # Pinia
+│   ├── components/          # 通用组件（ChatMarkdown 等）
 │   └── style.css            # 全局样式
+├── tests/                   # 单元测试（Vitest）
+├── .github/workflows/       # CI（类型检查 + Lint + 测试）
+├── docs/archive/            # 历史分析报告归档
 └── .env.example             # 配置模板
 ```
 
@@ -165,6 +169,43 @@ Vue3 前端 ⇄ Express API
 - 基于 Plan-Retrieve-Reflect-Synthesize 模式实现 Agent 深度研究工作流，支持多轮反思与子问题并行检索
 - 实现引用溯源功能，每个 AI 论断可溯源至原文档具体页码与位置
 - 全栈技术：Vue3 + Express + TypeScript + SQLite + OpenAI SDK + SSE 流式
+
+## 🚀 部署（常驻进程）
+
+> ⚠️ 本项目使用 SQLite 文件存储 + 本地向量索引 + SSE 长连接，**不适合 Vercel 等 Serverless 平台**
+>（文件系统只读、SSE 会被网关超时截断）。请部署到 Railway / Fly.io / VPS 等支持常驻进程与持久磁盘的平台。
+
+### 方式一：Node 直跑（VPS / Railway / Fly）
+
+1. 构建前端并让 Express 托管静态资源，或前后端分开部署
+2. 常驻启动后端：
+
+```bash
+npm install
+npm run build          # 构建前端产物 dist/
+node --import tsx api/server.ts   # 或 pm2 start "npm run server" --name nexusrag
+```
+
+最小 Dockerfile（平台若要求容器交付）：
+
+```dockerfile
+FROM node:24-alpine
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+ENV NODE_ENV=production PORT=3001
+EXPOSE 3001
+CMD ["node", "--import", "tsx", "api/server.ts"]
+```
+
+### 要点
+
+- **持久化**：将 `data/` 目录挂载为持久卷（SQLite 数据库 + 向量索引都在其中）
+- **环境变量**：`JWT_SECRET` 必填；`OPENAI_API_KEY` 可选（缺省进入 Demo 模式）
+- **SSE**：如前置 Nginx，需关闭缓冲（`proxy_buffering off;`）
+- Railway / Fly 均可直接使用上面的 Dockerfile
 
 ## 📜 License
 
