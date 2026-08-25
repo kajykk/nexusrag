@@ -192,7 +192,9 @@ npm run dev
 | `POSTGRES_*` | PostgreSQL 连接信息 | analytics / analytics123 |
 | `REDIS_HOST` | Redis 地址 | redis |
 | `MAX_UPLOAD_SIZE_MB` | 上传大小限制 | 50 |
-| `SANDBOX_TIMEOUT_SECONDS` | 沙箱子进程墙钟超时（超时击杀整个进程树） | 30 |
+| `SANDBOX_TIMEOUT_SECONDS` | 沙箱墙钟超时（超时击杀整个进程树/容器，两种模式通用） | 30 |
+| `SANDBOX_MODE` | 沙箱隔离模式：`subprocess`（默认）/ `docker` | subprocess |
+| `SANDBOX_DOCKER_IMAGE` | docker 模式使用的镜像（本地缺失自动 pull，失败回退 subprocess） | python:3.12-alpine |
 
 > 💡 支持 DeepSeek：将 `OPENAI_BASE_URL` 改为 `https://api.deepseek.com/v1`，`LLM_MODEL` 改为 `deepseek-chat`。
 
@@ -252,6 +254,22 @@ npm run dev
 3. **墙钟超时击杀**：超过时限强制击杀整个进程树（Windows `taskkill /F /T`、POSIX 对独立进程组 SIGKILL），防止 fork 孤儿进程；临时目录无论成败最终删除。
 
 > 平台限制（如实说明）：**Windows 无 setrlimit/seccomp**，CPU/内存约束由墙钟超时兜底（POSIX 分支尽力施加 RLIMIT_CPU/RLIMIT_AS）；网络不做硬隔离（已剥离代理变量 + URL 参数守卫收窄面）。超时时限由 `SANDBOX_TIMEOUT_SECONDS` 配置（默认 30s）。
+
+### 沙箱隔离模式对照（SANDBOX_MODE）
+
+`SANDBOX_MODE=subprocess`（默认）与 `SANDBOX_MODE=docker` 共享同一套 AST 门、pandas IO 黑名单、受限 builtins 与结果文件协议；区别在第二道隔离层：
+
+| 维度 | subprocess（默认） | docker |
+|------|-------------------|--------|
+| 隔离边界 | 一次性子进程（`python -I` + 环境变量剥离） | 一次性容器（`--rm --network=none --memory=512m --cpus=1 --pids-limit=128`） |
+| 网络 | **无硬隔离**：持有真实 socket 栈，仅守卫收窄面 | **硬隔离**：`--network=none`，容器无路由 |
+| CPU / 内存 | POSIX rlimit 尽力而为；Windows 仅超时兜底 | cgroups 硬限，全平台一致 |
+| 文件系统 | 宿主用户权限可见 | 仅临时工作目录挂载进出（`/work`） |
+| 超时处置 | `taskkill /F /T` 或 killpg 整树击杀 | `docker kill` 击杀容器 |
+| 依赖要求 | 无（复用后端 Python 环境） | 需要 Docker 引擎；默认 alpine 镜像缺 pandas 时首次自动装入持久依赖卷 |
+
+- docker 模式下镜像本地不存在会自动 `docker pull`；引擎不可用、pull 失败或依赖准备失败时**自动回退 subprocess 并记录 warning**，业务不中断。
+- 如实说明：Docker daemon 自身攻击面（socket 权限、镜像供应链）不在沙箱防护范围内。
 
 ---
 

@@ -58,8 +58,10 @@ class Settings(BaseSettings):
     MAX_UPLOAD_SIZE_MB: int = 50
     UPLOAD_DIR: str = "./uploads"
 
-    # 沙箱（进程级隔离执行用户分析代码）
-    SANDBOX_TIMEOUT_SECONDS: int = 30  # 子进程墙钟超时，超时击杀整个进程树
+    # 沙箱（进程级/容器级隔离执行用户分析代码）
+    SANDBOX_TIMEOUT_SECONDS: int = 30  # 墙钟超时，超时击杀整个进程树（两种模式通用）
+    SANDBOX_MODE: str = "subprocess"  # subprocess（默认）| docker
+    SANDBOX_DOCKER_IMAGE: str = "python:3.12-alpine"  # docker 模式镜像；缺失时自动 pull
 
     # CORS
     CORS_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
@@ -68,6 +70,14 @@ class Settings(BaseSettings):
     @classmethod
     def normalize_cors(cls, v: str) -> str:
         return v.strip()
+
+    @field_validator("SANDBOX_MODE")
+    @classmethod
+    def validate_sandbox_mode(cls, v: str) -> str:
+        mode = v.strip().lower()
+        if mode not in ("subprocess", "docker"):
+            raise ValueError(f"SANDBOX_MODE 仅支持 subprocess / docker，收到: {v!r}")
+        return mode
 
     @model_validator(mode="after")
     def _enforce_production_secret(self) -> "Settings":
