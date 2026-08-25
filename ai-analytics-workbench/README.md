@@ -192,6 +192,7 @@ npm run dev
 | `POSTGRES_*` | PostgreSQL 连接信息 | analytics / analytics123 |
 | `REDIS_HOST` | Redis 地址 | redis |
 | `MAX_UPLOAD_SIZE_MB` | 上传大小限制 | 50 |
+| `SANDBOX_TIMEOUT_SECONDS` | 沙箱子进程墙钟超时（超时击杀整个进程树） | 30 |
 
 > 💡 支持 DeepSeek：将 `OPENAI_BASE_URL` 改为 `https://api.deepseek.com/v1`，`LLM_MODEL` 改为 `deepseek-chat`。
 
@@ -236,11 +237,21 @@ npm run dev
 
 ## 🎯 技术亮点
 
-1. **LLM + 沙箱执行**：自然语言转 Pandas 代码，受限命名空间执行，禁用 IO/网络，安全可控
+1. **LLM + 沙箱执行**：自然语言转 Pandas 代码，**三层防线**隔离执行（见下），安全可控
 2. **双图表引擎**：前端 ECharts 交互探索 + 服务端 Matplotlib 静态渲染，兼顾灵活与可导出
 3. **实时进度推送**：Celery Worker 异步执行 → Redis Pub/Sub → WebSocket 转发，全链路进度可见
 4. **类型自动推断**：上传即推断列类型、空值数、唯一值数，LLM 据此生成精准代码
 5. **容器化编排**：PostgreSQL / Redis / FastAPI / Celery / Nginx 五服务一键拉起
+
+### 沙箱三层防线
+
+用户代码不在主进程内联执行，而是经三道防线在一次性子进程中运行（`backend/app/utils/sandbox.py`）：
+
+1. **AST 静态门**：启动子进程前零成本拒绝——拦截一切 `_` 开头属性访问（防 `df.__class__.__bases__...` 反射逃逸），pandas 危险 IO 黑名单（`read_pickle`/`read_stata` 禁用，`read_csv` 等读取器参数含 `://` 的 URL 拒绝）。
+2. **子进程隔离**：以 `python -I` 隔离模式启动子进程（忽略环境变量与 PYTHONPATH、不加载用户 site-packages），环境变量仅透传白名单键（代理类变量一律剥离），包装脚本内重建受限 builtins 白名单后 exec 用户代码。
+3. **墙钟超时击杀**：超过时限强制击杀整个进程树（Windows `taskkill /F /T`、POSIX 对独立进程组 SIGKILL），防止 fork 孤儿进程；临时目录无论成败最终删除。
+
+> 平台限制（如实说明）：**Windows 无 setrlimit/seccomp**，CPU/内存约束由墙钟超时兜底（POSIX 分支尽力施加 RLIMIT_CPU/RLIMIT_AS）；网络不做硬隔离（已剥离代理变量 + URL 参数守卫收窄面）。超时时限由 `SANDBOX_TIMEOUT_SECONDS` 配置（默认 30s）。
 
 ---
 
