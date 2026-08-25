@@ -10,6 +10,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
+import { paramToStr } from './utils/params'
 import fs from 'fs'
 import dotenv from 'dotenv'
 
@@ -47,8 +48,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }))
 
 // 上传文件受控下载：需登录后按文件名访问，不再匿名挂载静态目录
 app.get('/uploads/:filename', authMiddleware, (req: Request, res: Response): void => {
-  const filename = path.basename(req.params.filename)
-  if (filename !== req.params.filename || filename.includes('/') || filename.includes('\\')) {
+  const filename = path.basename(paramToStr(req.params.filename))
+  if (filename !== paramToStr(req.params.filename) || filename.includes('/') || filename.includes('\\')) {
     res.status(400).json({ success: false, error: '非法文件名' })
     return
   }

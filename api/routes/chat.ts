@@ -5,6 +5,7 @@ import { Router, type Response } from 'express'
 import { v4 as uuid } from 'uuid'
 import db from '../db.js'
 import { authMiddleware, type AuthRequest } from '../middleware/auth.js'
+import { paramToStr } from '../utils/params.js'
 import { ragAnswer } from '../rag/pipeline.js'
 import { runAgentWorkflow } from '../agents/workflow.js'
 import * as bm25 from '../rag/bm25.js'
@@ -18,7 +19,7 @@ router.use(authMiddleware)
  * 创建会话
  */
 router.post('/sessions', (req: AuthRequest, res: Response): void => {
-  const kbId = req.params.kbId
+  const kbId = paramToStr(req.params.kbId)
   const { title, mode } = req.body
 
   const kb = db.prepare('SELECT id FROM knowledge_bases WHERE id = ? AND user_id = ?').get(kbId, req.userId)
@@ -42,7 +43,7 @@ router.post('/sessions', (req: AuthRequest, res: Response): void => {
 router.get('/sessions', (req: AuthRequest, res: Response): void => {
   const sessions = db.prepare(`
     SELECT * FROM chat_sessions WHERE kb_id = ? AND user_id = ? ORDER BY created_at DESC
-  `).all(req.params.kbId, req.userId) as ChatSession[]
+  `).all(paramToStr(req.params.kbId), req.userId) as ChatSession[]
 
   res.json({ success: true, data: sessions })
 })
