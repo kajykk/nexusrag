@@ -9,7 +9,7 @@ psycopg[binary]==3.2.3
 alembic==1.13.3
 
 # Redis 与异步任务
-redis==5.1.1
+redis==8.1.0
 celery==5.4.0
 
 # 数据处理
