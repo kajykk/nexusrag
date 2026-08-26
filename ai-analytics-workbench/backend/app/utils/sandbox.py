@@ -71,8 +71,11 @@ docker 模式，``--network=none`` 由网络命名空间保证容器无路由）
 但 subprocess 模式已剥离 HTTP_PROXY / HTTPS_PROXY / ALL_PROXY / NO_PROXY
 等代理类环境变量，仅保留最小环境集合，pandas 读取器的 URL 参数亦被守卫拦截。
 
-已知薄弱点（与旧实现一致，如实保留）：仅拦截 pandas 顶层读取器的 URL 参数；
-``numpy.load(allow_pickle=True)``、h5py、scipy.io 等反序列化入口未逐一封堵。
+已封堵的反序列化入口：pandas 顶层读取器（黑名单/URL 守卫）；
+``np.load`` 在子进程内被强制包装——默认拒绝 pickle，显式
+``allow_pickle=True`` 直接抛 PermissionError（pickle reduce 可执行
+任意构造器，绕过 AST 属性门）。h5py、scipy.io 未在白名单内，
+用户代码无法 import（受限 builtins 无 __import__）。
 """
 
 import ast
