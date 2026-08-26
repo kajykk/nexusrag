@@ -191,7 +191,13 @@ npm run dev
 | `LLM_MODEL` | 模型名称 | `gpt-4o-mini` |
 | `POSTGRES_*` | PostgreSQL 连接信息 | analytics / analytics123 |
 | `REDIS_HOST` | Redis 地址 | redis |
+| `APP_ENV` | 运行环境；`production` 时强制校验 `SECRET_KEY`/`DATABASE_URL` 非默认弱值，并禁用 `/auth/demo` | development |
+| `JWT_EXPIRE_MINUTES` | access token 有效期 | 720（12h） |
+| `JWT_REFRESH_EXPIRE_MINUTES` | refresh token 有效期（配合 `/auth/refresh`） | 10080（7d） |
 | `MAX_UPLOAD_SIZE_MB` | 上传大小限制 | 50 |
+| `REPORTS_DIR` | 报告/图表工件目录（API 与 worker 必须一致） | ./reports |
+| `CHART_RETENTION_DAYS` | 图表保留天数，启动时清理过期文件；0 禁用 | 30 |
+| `LOG_JSON` | JSON 日志格式（生产推荐 true） | false |
 | `SANDBOX_TIMEOUT_SECONDS` | 沙箱墙钟超时（超时击杀整个进程树/容器，两种模式通用） | 30 |
 | `SANDBOX_MODE` | 沙箱隔离模式：`subprocess`（默认）/ `docker` | subprocess |
 | `SANDBOX_DOCKER_IMAGE` | docker 模式使用的镜像（本地缺失自动 pull，失败回退 subprocess） | python:3.12-alpine |
@@ -223,17 +229,25 @@ npm run dev
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
+| POST | `/api/v1/auth/register` | 注册（10 次/分钟/IP 限流） |
+| POST | `/api/v1/auth/login` | 登录（限流同上），返回 access + refresh 双 token |
+| POST | `/api/v1/auth/refresh` | 用 refresh token 换取新 token 对 |
+| GET | `/api/v1/auth/me` | 当前用户 |
 | POST | `/api/v1/datasets/upload` | 上传数据集 |
-| GET | `/api/v1/datasets` | 数据集列表 |
+| GET | `/api/v1/datasets` | 数据集列表（支持 `limit`/`offset` 分页） |
 | GET | `/api/v1/datasets/{id}` | 数据集详情 |
 | DELETE | `/api/v1/datasets/{id}` | 删除数据集 |
 | POST | `/api/v1/analyses` | 创建分析任务 |
-| GET | `/api/v1/analyses` | 分析任务列表 |
+| GET | `/api/v1/analyses` | 分析任务列表（支持分页） |
 | GET | `/api/v1/analyses/{id}` | 分析任务详情 |
+| GET | `/api/v1/analyses/{id}/chart` | 下载分析图表 PNG（认证 + 归属校验） |
 | POST | `/api/v1/reports` | 生成报告 |
-| GET | `/api/v1/reports` | 报告列表 |
+| GET | `/api/v1/reports` | 报告列表（支持分页） |
 | POST | `/api/v1/reports/{id}/export-pdf` | 导出 PDF |
-| WS | `/api/v1/ws/analysis/{id}` | 订阅分析进度 |
+| WS | `/ws/analysis/{id}?token=<jwt>` | 订阅分析进度（挂应用根路径，非 /api/v1 前缀） |
+
+> 安全说明：图表与 PDF 不提供匿名静态目录，统一经上述认证端点按归属下发；
+> NULL 属主的历史遗留行对所有登录用户只读可见（不可删改/派生报告）。
 
 ---
 
