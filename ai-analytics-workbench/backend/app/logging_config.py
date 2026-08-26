@@ -34,6 +34,24 @@ _NOISY_LOGGERS = (
 # 已知配置过就会阻塞输出的"已初始化"标记
 _SETUP_DONE_ATTR = "_app_logging_configured"
 
+# LogRecord 保留属性集合：由标准库属性自动推导，避免手工清单漏掉
+# 新版本新增字段（如 3.12 的 taskName）被误当作 extra 输出
+_RESERVED_ATTRS: frozenset[str] = frozenset(
+    vars(logging.LogRecord("name", 0, "path", 1, "msg", (), None)).keys()
+) | {"message", "asctime", "taskName"}
+
+
+class SingleLineFormatter(logging.Formatter):
+    """人类可读格式，消息中的换行转义为字面 \\n。
+
+    用户可控内容（email/question 等）含换行时可伪造日志行，
+    单行化是结构化采集的基本前提。
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        text = super().format(record)
+        return text.replace("\r", "\\r").replace("\n", "\\n")
+
 
 class JsonFormatter(logging.Formatter):
     """单行 JSON 日志格式器。
@@ -57,34 +75,11 @@ class JsonFormatter(logging.Formatter):
         if record.exc_info:
             payload["exc"] = self.formatException(record.exc_info)
         # 额外字段（如 logger.info(..., extra={"trace_id": ...})）
-        reserved = {
-            "name",
-            "msg",
-            "args",
-            "created",
-            "relativeCreated",
-            "exc_info",
-            "exc_text",
-            "stack_info",
-            "lineno",
-            "funcName",
-            "filename",
-            "module",
-            "levelno",
-            "levelname",
-            "pathname",
-            "thread",
-            "threadName",
-            "processName",
-            "process",
-            "msecs",
-            "message",
-        }
         for k, v in record.__dict__.items():
-            if k in reserved or k.startswith("_"):
+            if k in _RESERVED_ATTRS or k.startswith("_"):
                 continue
             payload.setdefault(k, _safe_jsonable(v))
-        return json.dumps(payload, ensure_ascii=False, default=str)
+        return json.dumps(payload, ensure_ascii=False, default=str, allow_nan=False)
 
 
 def _safe_jsonable(value: Any) -> Any:
@@ -96,7 +91,7 @@ def _safe_jsonable(value: Any) -> Any:
 
 
 def _human_formatter() -> logging.Formatter:
-    return logging.Formatter(
+    return SingleLineFormatter(
         fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )

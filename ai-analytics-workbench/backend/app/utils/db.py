@@ -27,9 +27,15 @@ def _validate_table_name(table_name: str) -> None:
 
 
 def dataframe_to_pg(df: pd.DataFrame, table_name: str) -> None:
-    """将 DataFrame 写入 PostgreSQL 指定表（覆盖）。"""
+    """将 DataFrame 写入 PostgreSQL 指定表（覆盖）。
+
+    ``method="multi"`` 会把每个 chunk 拼成一条多值 INSERT；不设 chunksize 时
+    pandas 默认整表单条语句，行数×列数极易突破 PG 协议 65535 个绑定参数上限。
+    这里按列数自适应分块（上限 1000 行/chunk）。
+    """
     _validate_table_name(table_name)
-    df.to_sql(table_name, engine, if_exists="replace", index=False, method="multi")
+    chunksize = min(1000, max(1, 65535 // max(1, len(df.columns))))
+    df.to_sql(table_name, engine, if_exists="replace", index=False, method="multi", chunksize=chunksize)
 
 
 def load_table_to_dataframe(table_name: str) -> pd.DataFrame:

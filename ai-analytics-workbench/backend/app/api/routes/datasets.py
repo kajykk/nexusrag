@@ -33,20 +33,24 @@ def _validate_file_extension(filename: str | None) -> None:
 
 
 @router.post("/upload", response_model=DatasetOut, status_code=201)
-async def upload(
+def upload(
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
     file: UploadFile = File(...),
     name: str = Form(...),
     description: str = Form(""),
 ) -> DatasetOut:
-    """上传 CSV/Excel 文件并自动入库 PostgreSQL（归属当前用户）。"""
+    """上传 CSV/Excel 文件并自动入库 PostgreSQL（归属当前用户）。
+
+    同步 ``def`` 路由：解析/写库是重 CPU/IO 操作，FastAPI 会自动放入
+    线程池执行，避免阻塞事件循环拖垮全部并发请求。
+    """
     # 路由层扩展名校验：在读取内容前提前拒绝非法文件
     _validate_file_extension(file.filename)
-    content = await file.read()
-    if len(content) > settings.max_upload_bytes:
+    # 大小预检：Starlette 已解析的分区大小 + Content-Length 双重提前拒绝，
+    # 避免先整读入内存才发现超限
+    if file.size is not None and file.size > settings.max_upload_bytes:
         raise HTTPException(413, f"文件超过 {settings.MAX_UPLOAD_SIZE_MB}MB 限制")
-    file.file.seek(0)
     try:
         dataset = upload_dataset(db, file, name, description, owner=user)
     except ValueError as e:
@@ -56,11 +60,16 @@ async def upload(
 
 @router.get("", response_model=list[DatasetOut])
 def list_all(
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> list[DatasetOut]:
-    """仅返回当前用户可见的数据集。"""
-    items = list_datasets(db, user)
+    """仅返回当前用户可见的数据集（支持 limit/offset 分页，默认 100 条）。"""
+    try:
+        items = list_datasets(db, user, limit=limit, offset=offset)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
     return [DatasetOut.model_validate(d) for d in items]
 
 

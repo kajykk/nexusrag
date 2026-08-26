@@ -66,16 +66,6 @@ async def get_current_user(
     return user
 
 
-async def get_current_user_optional(
-    token: str | None = Depends(oauth2_scheme),
-    db: Session = Depends(get_db),
-) -> User | None:
-    """可选认证：未提供 token 返回 None，无效 token 抛 401。"""
-    if not token:
-        return None
-    return await get_current_user(token=token, db=db)
-
-
 async def require_admin(user: User = Depends(get_current_user)) -> User:
     """要求当前用户是管理员。"""
     if not user.is_admin:

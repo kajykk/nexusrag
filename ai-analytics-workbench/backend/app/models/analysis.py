@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+from app.utils.timeutil import utcnow
 
 
 class Analysis(Base):
@@ -29,8 +30,8 @@ class Analysis(Base):
     chart_config: Mapped[str] = mapped_column(Text, default="{}", comment="前端 ECharts 配置 JSON")
     chart_image: Mapped[str] = mapped_column(String(255), default="", comment="服务端渲染图表相对路径")
     error_message: Mapped[str] = mapped_column(Text, default="", comment="失败原因")
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     def __repr__(self) -> str:
         return f"<Analysis #{self.id} ds={self.dataset_id} {self.status}>"

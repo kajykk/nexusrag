@@ -6,6 +6,7 @@ from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
+from app.utils.timeutil import utcnow
 
 
 class Report(Base):
@@ -21,7 +22,7 @@ class Report(Base):
     owner_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True, comment="归属用户"
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     def __repr__(self) -> str:
         return f"<Report #{self.id} analysis={self.analysis_id}>"
