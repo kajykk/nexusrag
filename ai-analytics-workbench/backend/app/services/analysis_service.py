@@ -1,19 +1,20 @@
 """分析服务：LLM 调用、代码执行、图表渲染、进度推送。"""
 
 import json
-import os
-from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db.session import SessionLocal
 from app.llm import SYSTEM_PROMPT, build_user_prompt, chat_completion, parse_json_response
 from app.logging_config import get_logger
 from app.models import Analysis, Dataset, User
+from app.schemas.analysis import AnalysisResult
 from app.services.dataset_service import get_dataset
 from app.services.ownership import apply_visible, is_visible
-from app.utils import load_table_to_dataframe, safe_execute_pandas
+from app.utils import load_table_to_dataframe, safe_execute_pandas, to_jsonable
 from app.utils.sandbox import ERROR_TIMEOUT
+from app.utils.timeutil import utcnow
 from app.visualization import render_chart
 from app.ws.pubsub import publish_progress
 
@@ -50,11 +51,22 @@ def get_analysis(db: Session, analysis_id: int, user: User | None = None) -> Ana
     return analysis
 
 
-def list_analyses(db: Session, dataset_id: int | None = None, user: User | None = None) -> list[Analysis]:
+def list_analyses(
+    db: Session,
+    dataset_id: int | None = None,
+    user: User | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[Analysis]:
+    """列出可见分析任务（支持分页，默认 100 条）。"""
+    if limit < 1 or limit > 500:
+        raise ValueError("limit 应在 1..500 之间")
+    if offset < 0:
+        raise ValueError("offset 不能为负")
     q = apply_visible(db.query(Analysis), Analysis, user)
-    if dataset_id:
+    if dataset_id is not None:  # 不用真值判断：dataset_id=0 时静默不过滤是防御性瑕疵
         q = q.filter(Analysis.dataset_id == dataset_id)
-    return q.order_by(Analysis.created_at.desc()).all()
+    return q.order_by(Analysis.created_at.desc()).limit(limit).offset(offset).all()
 
 
 def execute_analysis(analysis_id: int) -> dict:
@@ -74,6 +86,14 @@ def execute_analysis(analysis_id: int) -> dict:
         if not analysis:
             logger.warning("analysis.not_found", extra={"analysis_id": analysis_id})
             return {"error": "分析任务不存在"}
+
+        # 幂等保护：acks_late + worker 崩溃重投时，终态任务不重复执行
+        if analysis.status in ("succeeded", "failed"):
+            logger.info(
+                "analysis.skip_terminal_state",
+                extra={"analysis_id": analysis_id, "status": analysis.status},
+            )
+            return {"status": analysis.status, "analysis_id": analysis_id, "skipped": True}
 
         dataset = db.get(Dataset, analysis.dataset_id)
         if not dataset:
@@ -97,24 +117,28 @@ def execute_analysis(analysis_id: int) -> dict:
         publish_progress(analysis_id, "running", 25, "加载数据集")
         df = load_table_to_dataframe(dataset.table_name)
         columns_schema = json.loads(dataset.columns_schema or "[]")
-        preview = df.head(5).to_dict(orient="records")
+        # 必须经 to_jsonable 清洗：datetime64 列的 pd.Timestamp 无法被
+        # json.dumps 序列化，会让所有含日期列的数据集分析必然失败
+        preview = to_jsonable(df.head(5).to_dict(orient="records"))
 
         # 2. 调用 LLM
         publish_progress(analysis_id, "running", 45, "调用 LLM 生成分析代码")
         user_prompt = build_user_prompt(analysis.question, columns_schema, preview)
         raw = chat_completion(SYSTEM_PROMPT, user_prompt)
         llm_result = parse_json_response(raw)
-        code = llm_result.get("code", "")
-        chart_type = llm_result.get("chart_type", "table")
-        chart_config = llm_result.get("chart_config", {})
-        summary = llm_result.get("summary", "")
+        # schema 校验：LLM 输出缺失/类型错误时显式失败，而非静默产出空代码
+        parsed = AnalysisResult.model_validate(llm_result)
+        code = parsed.code
+        chart_type = parsed.chart_type
+        chart_config = parsed.chart_config
+        summary = parsed.summary
 
         analysis.generated_code = code
-        analysis.code_type = llm_result.get("code_type", "python")
+        analysis.code_type = parsed.code_type
 
         # 3. 执行代码（进程级隔离沙箱，见 app/utils/sandbox.py）
         publish_progress(analysis_id, "running", 70, "执行分析代码")
-        reports_dir = os.path.join(os.getcwd(), "reports")
+        reports_dir = settings.reports_abs_dir
         exec_result = safe_execute_pandas(code, df, artifacts_dir=reports_dir)
         if exec_result["error"]:
             timed_out = exec_result.get("error_type") == ERROR_TIMEOUT
@@ -124,7 +148,7 @@ def execute_analysis(analysis_id: int) -> dict:
             )
             analysis.status = "failed"
             analysis.error_message = exec_result["error"]
-            analysis.completed_at = datetime.utcnow()
+            analysis.completed_at = utcnow()
             db.commit()
             message = "代码执行超时，已强制终止" if timed_out else "代码执行失败"
             publish_progress(analysis_id, "failed", 100, message, {"error": exec_result["error"]})
@@ -141,7 +165,7 @@ def execute_analysis(analysis_id: int) -> dict:
 
         # 5. 完成
         analysis.status = "succeeded"
-        analysis.completed_at = datetime.utcnow()
+        analysis.completed_at = utcnow()
         db.commit()
         logger.info("analysis.succeeded", extra={"analysis_id": analysis_id, "chart_path": chart_path})
 
@@ -165,7 +189,7 @@ def execute_analysis(analysis_id: int) -> dict:
         if analysis:
             analysis.status = "failed"
             analysis.error_message = str(exc)
-            analysis.completed_at = datetime.utcnow()
+            analysis.completed_at = utcnow()
             db.commit()
         publish_progress(analysis_id, "failed", 100, f"分析失败: {exc}", {"error": str(exc)})
         return {"error": str(exc)}

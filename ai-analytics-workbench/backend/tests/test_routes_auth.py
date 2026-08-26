@@ -179,3 +179,63 @@ class TestDemoAccount:
         )
         assert resp2.status_code == 200
         assert resp2.json()["email"] == "demo@analytics-workbench.dev"
+
+
+class TestDemoProductionDisabled:
+    def test_demo_disabled_in_production(self, client, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "APP_ENV", "production")
+        resp = client.post("/api/v1/auth/demo")
+        assert resp.status_code == status.HTTP_404_NOT_FOUND
+
+    def test_demo_available_outside_production(self, client, monkeypatch):
+        from app.config import settings
+
+        monkeypatch.setattr(settings, "APP_ENV", "development")
+        resp = client.post("/api/v1/auth/demo")
+        assert resp.status_code == status.HTTP_200_OK
+
+
+class TestAuthRateLimit:
+    def test_login_rate_limited_after_burst(self, client):
+        """超过 10 次/分钟/IP 后应返回 429（防爆破基本防线）。"""
+        from app.utils.ratelimit import auth_limiter
+
+        auth_limiter.reset()  # 隔离其它用例在同 IP 上的累积计数
+        payload = {"email": "nobody@example.com", "password": "wrong-password"}
+        for i in range(10):
+            resp = client.post("/api/v1/auth/login", json=payload)
+            assert resp.status_code == status.HTTP_401_UNAUTHORIZED, f"第{i}次不应被限流"
+        resp = client.post("/api/v1/auth/login", json=payload)
+        assert resp.status_code == status.HTTP_429_TOO_MANY_REQUESTS
+        # 复位，避免影响后续用例
+        auth_limiter.reset()
+
+
+class TestRefreshFlow:
+    def test_refresh_returns_new_token_pair(self, client):
+        reg = client.post(
+            "/api/v1/auth/register",
+            json={"email": "rf@example.com", "name": "RF", "password": "password123"},
+        )
+        refresh_token = reg.json()["refresh_token"]
+        assert refresh_token
+
+        resp = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["access_token"]
+        assert body["user"]["email"] == "rf@example.com"
+
+    def test_access_token_cannot_refresh(self, client):
+        """access/refresh 类型隔离：access token 不能当 refresh 用。"""
+        from app.security import create_access_token
+
+        access = create_access_token(subject="123")
+        resp = client.post("/api/v1/auth/refresh", json={"refresh_token": access})
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_garbage_refresh_rejected(self, client):
+        resp = client.post("/api/v1/auth/refresh", json={"refresh_token": "not-a-jwt"})
+        assert resp.status_code == status.HTTP_401_UNAUTHORIZED

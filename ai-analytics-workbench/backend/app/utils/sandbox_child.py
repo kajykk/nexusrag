@@ -112,6 +112,24 @@ def _install_pd_guards(blocked_readers: list[str], url_guarded_readers: list[str
             setattr(pd, name, _make_url_guarded_reader(name, func))
 
 
+def _install_np_guards() -> None:
+    """封堵 numpy 反序列化入口。
+
+    ``np.load(allow_pickle=True)`` 可通过 pickle reduce 执行任意构造器，
+    完全绕过 AST 属性门（不需要任何 dunder 字面量）。子进程是一次性
+    进程，原地包装安全：默认拒绝 pickle，显式传 allow_pickle=True 时抛错。
+    """
+    real_load = np.load
+
+    def _guarded_load(*args, **kwargs):  # noqa: ANN002, ANN003
+        if kwargs.get("allow_pickle"):
+            raise PermissionError("沙箱已禁用 np.load(allow_pickle=True)：pickle 反序列化可执行任意代码")
+        return real_load(*args, **kwargs)
+
+    _guarded_load.__name__ = "np_load_guarded"
+    np.load = _guarded_load  # type: ignore[assignment]
+
+
 def _jsonable(obj, state: dict):
     """递归转 JSON 可序列化结构；DataFrame 首次出现时另存全量 CSV。
 
@@ -137,6 +155,10 @@ def _jsonable(obj, state: dict):
     if isinstance(obj, np.floating):
         value = float(obj)
         return value if math.isfinite(value) else None
+    if isinstance(obj, float):
+        # 普通 Python float 的 NaN/Inf 也会让 json.dumps 写出非法 JSON 字面量，
+        # 浏览器端 JSON.parse 会直接报错——统一归一为 null
+        return obj if math.isfinite(obj) else None
     if isinstance(obj, np.ndarray):
         return obj.tolist()
     if isinstance(obj, pd.Timestamp):
@@ -169,6 +191,7 @@ def main() -> int:
         "df": df,
     }
     _install_pd_guards(cfg["blocked_readers"], cfg["url_guarded_readers"])
+    _install_np_guards()
 
     state = {
         "csv_written": False,
@@ -176,6 +199,7 @@ def main() -> int:
         "max_record_rows": int(cfg["max_record_rows"]),
     }
 
+    body: str
     try:
         exec(compile(source, "user_code.py", "exec"), sandbox_globals)  # noqa: S102
         chart_png_path = sandbox_globals.get("chart_png_path") or sandbox_globals.get("chart_path")
@@ -185,11 +209,14 @@ def main() -> int:
             "result_csv": state["csv_path"] if state["csv_written"] else None,
             "chart_png_path": chart_png_path if isinstance(chart_png_path, str) and chart_png_path else None,
         }
+        # allow_nan=False：任何漏网的 NaN/Inf 在此处显式失败而非写出非法 JSON
+        body = json.dumps(payload, ensure_ascii=False, allow_nan=False)
     except Exception as exc:  # noqa: BLE001
         traceback.print_exc()  # 进入 stderr，主进程生成摘要
         payload = {"status": "error", "error_type": type(exc).__name__, "error": str(exc)}
+        body = json.dumps(payload, ensure_ascii=False, allow_nan=False)
 
-    Path("result.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    Path("result.json").write_text(body, encoding="utf-8")
     return 0
 
 

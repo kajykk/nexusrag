@@ -6,6 +6,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.logging_config import get_logger
 from app.models import Report, User
 from app.services.analysis_service import get_analysis
@@ -63,7 +64,13 @@ def build_markdown(db: Session, analysis_id: int, title: str = "数据分析报�
 
     content_md = "\n".join(md_parts)
 
-    # 覆盖已有报告或新建（继承分析任务归属）
+    # 覆盖已有报告或新建（继承分析任务归属）。
+    # NULL 属主分析过渡期只读：普通用户不可据其生成/覆盖报告（防止"认领"）
+    from app.services.ownership import can_mutate
+
+    if not can_mutate(analysis, owner):
+        raise ValueError("无权对该分析生成报告")
+
     report = db.query(Report).filter(Report.analysis_id == analysis_id).first()
     if report:
         report.title = title
@@ -120,6 +127,23 @@ def _dict_to_markdown(d: dict) -> str:
     return "\n".join(lines)
 
 
+def _local_only_url_fetcher(url: str, *args: object, **kwargs: object):  # noqa: ANN002, ANN003
+    """WeasyPrint 资源抓取白名单：仅允许相对路径 / file:// 本地文件。
+
+    用户可控内容（标题/问题/LLM 输出）可能包含外链 <img>，若不拦截，
+    导出 PDF 时服务器会代为请求任意 URL（SSRF，含云元数据地址）。
+    """
+    from urllib.parse import urlparse
+
+    from weasyprint import default_url_fetcher
+
+    scheme = urlparse(url).scheme
+    if scheme in ("", "file"):
+        return default_url_fetcher(url, *args, **kwargs)
+    logger.warning("report.pdf_blocked_external_resource", extra={"report_url": url[:200]})
+    raise ValueError(f"禁止在 PDF 中引用外部资源: {url[:120]}")
+
+
 def export_pdf(db: Session, report_id: int, user: User | None = None) -> str:
     """将 Markdown 报告导出为 PDF，返回相对路径；user 提供时校验归属。"""
     import markdown
@@ -129,7 +153,7 @@ def export_pdf(db: Session, report_id: int, user: User | None = None) -> str:
     if not report or not is_visible(report, user):
         raise ValueError("报告不存在")
 
-    reports_dir = os.path.join(os.getcwd(), "reports")
+    reports_dir = settings.reports_abs_dir
     os.makedirs(reports_dir, exist_ok=True)
     pdf_path = os.path.join(reports_dir, f"report_{report_id}.pdf")
 
@@ -151,7 +175,7 @@ def export_pdf(db: Session, report_id: int, user: User | None = None) -> str:
 <body>{html_body}</body>
 </html>"""
 
-    HTML(string=html_doc).write_pdf(pdf_path)
+    HTML(string=html_doc, url_fetcher=_local_only_url_fetcher).write_pdf(pdf_path)
     report.pdf_path = f"reports/report_{report_id}.pdf"
     db.commit()
     logger.info("report.exported_pdf", extra={"report_id": report_id, "pdf_path": report.pdf_path})

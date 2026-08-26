@@ -56,28 +56,48 @@ manager = ConnectionManager()
 async def redis_subscriber_loop() -> None:
     """后台任务：订阅 Redis 的 `analysis_progress` 频道，
     将收到的进度消息转发给对应的 WebSocket 客户端。
+
+    网络抖动 / Redis 重启导致的连接异常会触发指数退避重连，
+    而不是让订阅循环静默死亡（否则进度推送将永久失效直至进程重启）。
     """
+    import asyncio
+    import contextlib
+
     import redis.asyncio as aioredis
 
-    redis = aioredis.from_url(settings.redis_url)
-    pubsub = redis.pubsub()
-    await pubsub.subscribe("analysis_progress")
-    logger.info("ws.redis_subscribed", extra={"channel": "analysis_progress"})
-    try:
-        async for message in pubsub.listen():
-            if message["type"] != "message":
-                continue
-            try:
-                payload = json.loads(message["data"])
-                analysis_id = int(payload.get("analysis_id", 0))
-                await manager.send_to_subscribers(analysis_id, payload)
-            except Exception as exc:  # noqa: BLE001
-                logger.error(
-                    "ws.forward_failed",
-                    extra={"error": str(exc), "channel": "analysis_progress"},
-                    exc_info=True,
-                )
-    finally:
-        await pubsub.unsubscribe("analysis_progress")
-        await redis.close()
-        logger.info("ws.redis_unsubscribed", extra={"channel": "analysis_progress"})
+    backoff = 1.0
+    while True:
+        redis: aioredis.Redis | None = None
+        try:
+            redis = aioredis.from_url(settings.redis_url)
+            pubsub = redis.pubsub()
+            await pubsub.subscribe("analysis_progress")
+            logger.info("ws.redis_subscribed", extra={"channel": "analysis_progress"})
+            backoff = 1.0  # 连接成功后重置退避
+            async for message in pubsub.listen():
+                if message["type"] != "message":
+                    continue
+                try:
+                    payload = json.loads(message["data"])
+                    analysis_id = int(payload.get("analysis_id", 0))
+                    await manager.send_to_subscribers(analysis_id, payload)
+                except Exception as exc:  # noqa: BLE001
+                    logger.error(
+                        "ws.forward_failed",
+                        extra={"error": str(exc), "channel": "analysis_progress"},
+                        exc_info=True,
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            logger.warning(
+                "ws.redis_connection_lost",
+                extra={"retry_in_seconds": backoff},
+                exc_info=True,
+            )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 30.0)
+        finally:
+            if redis is not None:
+                with contextlib.suppress(Exception):
+                    await redis.aclose()

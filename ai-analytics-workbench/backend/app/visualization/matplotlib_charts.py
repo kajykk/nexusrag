@@ -1,6 +1,7 @@
 """服务端图表渲染：使用 Matplotlib/Seaborn 生成 PNG。"""
 
 import os
+import time
 from typing import Any
 
 import matplotlib
@@ -9,15 +10,47 @@ matplotlib.use("Agg")  # 无 GUI 后端
 import matplotlib.pyplot as plt
 import pandas as pd
 
+from app.config import settings
+
 # 中文字体
 plt.rcParams["font.sans-serif"] = ["Noto Sans CJK SC", "SimHei", "DejaVu Sans"]
 plt.rcParams["axes.unicode_minus"] = False
 
 
 def _ensure_reports_dir() -> str:
-    reports_dir = os.path.join(os.getcwd(), "reports")
+    reports_dir = settings.reports_abs_dir
     os.makedirs(reports_dir, exist_ok=True)
     return reports_dir
+
+
+def cleanup_old_charts(max_age_days: int) -> int:
+    """删除超过保留期的 chart_*.png，返回清理数量（尽力而为，失败不抛出）。
+
+    历史图表随分析次数无限累积；按 CHART_RETENTION_DAYS 定期回收。
+    注意：清理后旧报告中的服务端图表将不可再下载——保留期需结合
+    报告留存要求配置（设为 0 可禁用）。
+    """
+    if max_age_days <= 0:
+        return 0
+    cutoff = time.time() - max_age_days * 86400
+    removed = 0
+    try:
+        reports_dir = settings.reports_abs_dir
+        if not os.path.isdir(reports_dir):
+            return 0
+        for name in os.listdir(reports_dir):
+            path = os.path.join(reports_dir, name)
+            if not name.startswith("chart_") or not name.endswith(".png"):
+                continue
+            try:
+                if os.path.getmtime(path) < cutoff:
+                    os.unlink(path)
+                    removed += 1
+            except OSError:
+                continue
+    except OSError:
+        return removed
+    return removed
 
 
 def render_chart(
@@ -40,28 +73,31 @@ def render_chart(
     chart_config = chart_config or {}
     title = chart_config.get("title", f"分析结果 #{analysis_id}")
     reports_dir = _ensure_reports_dir()
-    filename = f"chart_{analysis_id}.png"
+    # 带时间戳后缀：重跑同一分析不再静默覆盖旧图（旧报告引用的文件内容会变）
+    filename = f"chart_{analysis_id}_{int(time.time())}.png"
     filepath = os.path.join(reports_dir, filename)
 
     df = _to_dataframe(result)
     fig, ax = plt.subplots(figsize=(10, 6), dpi=120)
+    try:
+        if df is None or df.empty or chart_type == "table":
+            _render_table(ax, df, title)
+        elif chart_type == "bar":
+            _render_bar(ax, df, chart_config)
+        elif chart_type == "line":
+            _render_line(ax, df, chart_config)
+        elif chart_type == "pie":
+            _render_pie(ax, df, chart_config)
+        elif chart_type == "scatter":
+            _render_scatter(ax, df, chart_config)
+        else:
+            _render_table(ax, df, title)
 
-    if df is None or df.empty or chart_type == "table":
-        _render_table(ax, df, title)
-    elif chart_type == "bar":
-        _render_bar(ax, df, chart_config)
-    elif chart_type == "line":
-        _render_line(ax, df, chart_config)
-    elif chart_type == "pie":
-        _render_pie(ax, df, chart_config)
-    elif chart_type == "scatter":
-        _render_scatter(ax, df, chart_config)
-    else:
-        _render_table(ax, df, title)
-
-    fig.tight_layout()
-    fig.savefig(filepath, bbox_inches="tight")
-    plt.close(fig)
+        fig.tight_layout()
+        fig.savefig(filepath, bbox_inches="tight")
+    finally:
+        # 渲染异常时也必须关闭 figure，否则 pyplot 全局状态泄漏内存
+        plt.close(fig)
     return f"reports/{filename}"
 
 

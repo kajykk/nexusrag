@@ -3,20 +3,31 @@
 import json
 from typing import Any
 
-from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+from openai import APIConnectionError, APITimeoutError, OpenAI, RateLimitError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from app.config import settings
+
+# 单次请求超时：SDK 默认 600s，叠加重试会远超 Celery task_time_limit，
+# 导致 worker 被 SIGKILL、任务永久卡在 running
+_REQUEST_TIMEOUT = 60.0
 
 
 def _build_client() -> OpenAI:
     return OpenAI(
         api_key=settings.OPENAI_API_KEY,
         base_url=settings.OPENAI_BASE_URL,
+        timeout=_REQUEST_TIMEOUT,
+        max_retries=0,  # 重试统一交给 tenacity，按错误类型区分
     )
 
 
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+# 仅对瞬时故障重试；401/400 等确定性错误立即失败
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=2, max=10),
+    retry=retry_if_exception_type((APIConnectionError, APITimeoutError, RateLimitError)),
+)
 def chat_completion(system_prompt: str, user_prompt: str, **kwargs: Any) -> str:
     """调用 LLM 并返回文本内容。
 

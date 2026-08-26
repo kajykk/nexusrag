@@ -25,6 +25,10 @@ celery_app.conf.update(
     task_time_limit=600,
     task_soft_time_limit=540,
     worker_prefetch_multiplier=1,
+    # 可靠性：执行完成才确认消息；worker 被 OOM/重启杀死时任务重投，
+    # 避免任务永久卡在 running。配合 execute_analysis 入口的幂等检查。
+    task_acks_late=True,
+    task_reject_on_worker_lost=True,
 )
 
 

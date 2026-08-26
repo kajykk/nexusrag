@@ -34,8 +34,15 @@ class UserOut(BaseModel):
 
 
 class TokenOut(BaseModel):
-    """登录成功返回的 token。"""
+    """登录/注册成功返回的 token 对。"""
 
     access_token: str
+    refresh_token: str | None = None
     token_type: str = "bearer"
     user: UserOut
+
+
+class RefreshRequest(BaseModel):
+    """刷新 access token 请求。"""
+
+    refresh_token: str = Field(..., min_length=1)

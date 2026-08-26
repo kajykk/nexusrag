@@ -56,11 +56,12 @@ class TestToDataframe:
 
 class TestRenderChart:
     def test_render_chart_table(self, tmp_path, monkeypatch):
-        """测试 table 类型渲染生成 PNG 文件。"""
+        """测试 table 类型渲染生成 PNG 文件（文件名带时间戳后缀防覆盖）。"""
         monkeypatch.chdir(tmp_path)
         result = [{"a": 1, "b": 2}, {"a": 3, "b": 4}]
         path = render_chart(result, "table", analysis_id=1)
-        assert path == "reports/chart_1.png"
+        assert path.startswith("reports/chart_1_")
+        assert path.endswith(".png")
         assert os.path.exists(path)
         # 验证是 PNG 文件
         with open(path, "rb") as f:
@@ -72,7 +73,7 @@ class TestRenderChart:
         monkeypatch.chdir(tmp_path)
         result = {"category": ["A", "B", "C"], "value": [10, 20, 30]}
         path = render_chart(result, "bar", analysis_id=2, chart_config={"title": "柱状图"})
-        assert path == "reports/chart_2.png"
+        assert path.startswith("reports/chart_2_")
         assert os.path.exists(path)
         with open(path, "rb") as f:
             header = f.read(8)

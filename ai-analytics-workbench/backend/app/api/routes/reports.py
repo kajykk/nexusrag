@@ -12,6 +12,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, get_session
+from app.config import settings
 from app.models import Report, User
 from app.schemas.report import ReportCreate, ReportOut
 from app.services import build_markdown, export_pdf
@@ -25,11 +26,23 @@ _PDF_PATH_RE = re.compile(r"^reports/report_\d+\.pdf$")
 
 @router.get("", response_model=list[ReportOut])
 def list_all(
+    limit: int = 100,
+    offset: int = 0,
     db: Session = Depends(get_session),
     user: User = Depends(get_current_user),
 ) -> list[ReportOut]:
-    """仅返回当前用户可见的报告。"""
-    items = apply_visible(db.query(Report), Report, user).order_by(Report.created_at.desc()).all()
+    """仅返回当前用户可见的报告（支持 limit/offset 分页，默认 100 条）。"""
+    if limit < 1 or limit > 500:
+        raise HTTPException(422, "limit 应在 1..500 之间")
+    if offset < 0:
+        raise HTTPException(422, "offset 不能为负")
+    items = (
+        apply_visible(db.query(Report), Report, user)
+        .order_by(Report.created_at.desc())
+        .limit(limit)
+        .offset(offset)
+        .all()
+    )
     return [ReportOut.model_validate(r) for r in items]
 
 
@@ -96,9 +109,9 @@ def download(
     if not _PDF_PATH_RE.match(report.pdf_path):
         raise HTTPException(500, "PDF 路径格式异常")
 
-    abs_path = os.path.join(os.getcwd(), report.pdf_path)
+    abs_path = os.path.join(settings.reports_abs_dir, os.path.basename(report.pdf_path))
     # 二次校验：解析后的绝对路径必须在 reports 目录内
-    reports_root = os.path.abspath(os.path.join(os.getcwd(), "reports"))
+    reports_root = settings.reports_abs_dir
     abs_path_resolved = os.path.abspath(abs_path)
     if not abs_path_resolved.startswith(reports_root + os.sep):
         raise HTTPException(500, "PDF 路径越界")

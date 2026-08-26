@@ -162,3 +162,54 @@ class TestAnalysisService:
         # 不过滤：全部
         all_items = list_analyses(db_session)
         assert len(all_items) == 3
+
+
+class TestNullOwnerMutatePolicy:
+    """NULL 属主行过渡期只读策略（M5）：普通用户不可删/不可派生，管理员可。"""
+
+    def test_null_owner_dataset_delete_denied_for_user(self, db_session, make_dataset, make_user):
+        from app.services.dataset_service import delete_dataset
+
+        ds = make_dataset(owner_id=None)
+        user = make_user(email="plain@example.com")
+        assert delete_dataset(db_session, ds.id, user) is False
+        # 数据集仍在
+        assert db_session.get(type(ds), ds.id) is not None
+
+    def test_null_owner_dataset_delete_allowed_for_admin(self, db_session, make_dataset, make_user):
+        from app.services.dataset_service import delete_dataset
+
+        ds = make_dataset(table_name="ds_admin_del_none")
+        admin = make_user(email="admin@example.com", is_admin=True)
+        assert delete_dataset(db_session, ds.id, admin) is True
+
+
+class TestNullOwnerReportPolicy:
+    def test_null_owner_analysis_report_denied_for_user(self, db_session, make_dataset, make_user):
+        """NULL 属主分析过渡期只读：普通用户不可据其生成报告。"""
+        import pytest as _pytest
+
+        from app.models import Analysis
+        from app.services.report_service import build_markdown
+
+        ds = make_dataset(owner_id=None)
+        analysis = Analysis(dataset_id=ds.id, question="q", status="succeeded", owner_id=None)
+        db_session.add(analysis)
+        db_session.commit()
+
+        user = make_user(email="reporter@example.com")
+        with _pytest.raises(ValueError, match="无权"):
+            build_markdown(db_session, analysis.id, title="t", owner=user)
+
+    def test_null_owner_analysis_report_allowed_for_admin(self, db_session, make_dataset, make_user):
+        from app.models import Analysis
+        from app.services.report_service import build_markdown
+
+        ds = make_dataset(owner_id=None)
+        analysis = Analysis(dataset_id=ds.id, question="q", status="succeeded", owner_id=None)
+        db_session.add(analysis)
+        db_session.commit()
+
+        admin = make_user(email="admin-report@example.com", is_admin=True)
+        report = build_markdown(db_session, analysis.id, title="t", owner=admin)
+        assert report.id is not None
