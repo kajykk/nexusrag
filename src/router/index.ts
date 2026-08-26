@@ -1,40 +1,36 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import HomePage from '@/pages/HomePage.vue'
-import LoginPage from '@/pages/LoginPage.vue'
-import DashboardPage from '@/pages/DashboardPage.vue'
-import KbDetailPage from '@/pages/KbDetailPage.vue'
-import ChatPage from '@/pages/ChatPage.vue'
 import { useAuthStore } from '@/stores/auth'
 
+// 路由级代码分割：各页面独立 chunk，首屏只加载当前路由
 const routes = [
   {
     path: '/',
     name: 'home',
-    component: HomePage,
+    component: () => import('@/pages/HomePage.vue'),
   },
   {
     path: '/login',
     name: 'login',
-    component: LoginPage,
+    component: () => import('@/pages/LoginPage.vue'),
     meta: { guestOnly: true },
   },
   {
     path: '/dashboard',
     name: 'dashboard',
-    component: DashboardPage,
+    component: () => import('@/pages/DashboardPage.vue'),
     meta: { requiresAuth: true },
   },
   {
     path: '/kb/:id',
     name: 'kb-detail',
-    component: KbDetailPage,
+    component: () => import('@/pages/KbDetailPage.vue'),
     meta: { requiresAuth: true },
     props: true,
   },
   {
     path: '/chat/:kbId/:sessionId?',
     name: 'chat',
-    component: ChatPage,
+    component: () => import('@/pages/ChatPage.vue'),
     meta: { requiresAuth: true },
     props: true,
   },

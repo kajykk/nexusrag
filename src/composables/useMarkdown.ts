@@ -3,8 +3,30 @@
  */
 import { computed } from 'vue'
 import MarkdownIt from 'markdown-it'
-import hljs from 'highlight.js'
+// 按需注册语言：全量 highlight.js 约占打包体积 1MB，实际只需常见语言
+import hljs from 'highlight.js/lib/core'
+import javascript from 'highlight.js/lib/languages/javascript'
+import typescript from 'highlight.js/lib/languages/typescript'
+import python from 'highlight.js/lib/languages/python'
+import json from 'highlight.js/lib/languages/json'
+import bash from 'highlight.js/lib/languages/bash'
+import sql from 'highlight.js/lib/languages/sql'
+import xml from 'highlight.js/lib/languages/xml'
+import markdownLang from 'highlight.js/lib/languages/markdown'
 import type { Citation } from '@/api/types'
+
+for (const [name, lang] of [
+  ['javascript', javascript],
+  ['typescript', typescript],
+  ['python', python],
+  ['json', json],
+  ['bash', bash],
+  ['sql', sql],
+  ['xml', xml],
+  ['markdown', markdownLang],
+] as const) {
+  hljs.registerLanguage(name, lang)
+}
 
 // 配置 markdown-it
 const md = new MarkdownIt({

@@ -51,6 +51,17 @@ async function scrollToBottom() {
   }
 }
 
+// 流式输出期间按帧合并滚动，避免每个 token 触发一次布局计算
+let scrollScheduled = false
+function scheduleScroll() {
+  if (scrollScheduled) return
+  scrollScheduled = true
+  requestAnimationFrame(() => {
+    scrollScheduled = false
+    void scrollToBottom()
+  })
+}
+
 async function fetchSessions() {
   try {
     sessions.value = await chatApi.listSessions(props.kbId)
@@ -136,7 +147,7 @@ async function send() {
       (chunk) => {
         if (chunk.type === 'token') {
           assistantMsg.content += chunk.data.content || ''
-          scrollToBottom()
+          scheduleScroll()
         } else if (chunk.type === 'citation') {
           assistantMsg.citations = chunk.data.citations
         } else if (chunk.type === 'status') {
@@ -214,7 +225,7 @@ onMounted(async () => {
       </div>
 
       <div class="p-3">
-        <button @click="newSession" class="btn-ghost w-full justify-center text-sm">
+        <button class="btn-ghost w-full justify-center text-sm" @click="newSession">
           <Plus class="w-4 h-4" />
           新对话
         </button>
@@ -228,9 +239,9 @@ onMounted(async () => {
         <button
           v-for="s in sessions"
           :key="s.id"
-          @click="selectSession(s.id)"
           class="group w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors flex items-center gap-2"
           :class="currentSessionId === s.id ? 'bg-bg-elevate text-text-primary' : 'hover:bg-bg-hover text-text-secondary'"
+          @click="selectSession(s.id)"
         >
           <MessageSquare class="w-4 h-4 shrink-0 opacity-50" />
           <div class="flex-1 min-w-0">
@@ -239,8 +250,8 @@ onMounted(async () => {
           </div>
           <span v-if="s.mode === 'agent'" class="badge badge-violet text-[10px]">Agent</span>
           <span
-            @click.stop="deleteSession(s.id)"
             class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 hover:text-red-400 transition-all"
+            @click.stop="deleteSession(s.id)"
           >
             <Trash2 class="w-3 h-3" />
           </span>
@@ -255,17 +266,17 @@ onMounted(async () => {
         <div class="flex items-center gap-3">
           <div class="flex p-1 rounded-lg bg-bg-elevate">
             <button
-              @click="mode = 'normal'"
               class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
               :class="mode === 'normal' ? 'bg-bg-card text-accent-cyan shadow' : 'text-text-muted hover:text-text-primary'"
+              @click="mode = 'normal'"
             >
               <Zap class="w-3.5 h-3.5" />
               普通 RAG
             </button>
             <button
-              @click="mode = 'agent'"
               class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
               :class="mode === 'agent' ? 'bg-bg-card text-accent-violet shadow' : 'text-text-muted hover:text-text-primary'"
+              @click="mode = 'agent'"
             >
               <Brain class="w-3.5 h-3.5" />
               Agent 深度研究
@@ -298,8 +309,8 @@ onMounted(async () => {
               <button
                 v-for="q in ['总结一下这个知识库的核心内容', '有哪些关键信息？请列出', '帮我对比文档中的不同观点', '基于文档给出建议']"
                 :key="q"
-                @click="input = q; send()"
                 class="glass-card p-3 text-left text-sm hover:border-accent-cyan/40 transition-colors text-text-secondary hover:text-text-primary"
+                @click="input = q; send()"
               >
                 {{ q }}
               </button>
@@ -357,8 +368,8 @@ onMounted(async () => {
                   <!-- 引用 -->
                   <div v-if="msg.citations && msg.citations.length > 0 && msg.status === 'done'" class="mt-4">
                     <button
-                      @click="showCitationPanel(msg.citations)"
                       class="inline-flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg bg-bg-elevate border border-border-subtle hover:border-accent-cyan/40 text-text-secondary hover:text-text-primary transition-colors"
+                      @click="showCitationPanel(msg.citations)"
                     >
                       <Quote class="w-3.5 h-3.5" />
                       {{ msg.citations.length }} 个引用来源
@@ -378,16 +389,16 @@ onMounted(async () => {
           <div class="relative">
             <textarea
               v-model="input"
-              @keydown="onInputKeydown"
               :placeholder="mode === 'agent' ? '描述你的研究问题，Agent 会多轮检索并生成报告...' : '提出你的问题...'"
               rows="2"
               class="input-field resize-none pr-24"
               :disabled="sending"
+              @keydown="onInputKeydown"
             />
             <button
-              @click="send"
               :disabled="!canSend"
               class="absolute right-2 bottom-2 px-3 py-2 rounded-lg bg-gradient-cv text-white text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed hover:shadow-lg hover:shadow-accent-cyan/30 transition-all flex items-center gap-1.5"
+              @click="send"
             >
               <Send v-if="!sending" class="w-3.5 h-3.5" />
               <Loader2 v-else class="w-3.5 h-3.5 animate-spin" />
@@ -412,7 +423,7 @@ onMounted(async () => {
             <h3 class="font-display font-semibold">引用来源</h3>
             <span class="badge badge-cyan">{{ activeCitations.length }}</span>
           </div>
-          <button @click="showCitations = false" class="p-1.5 rounded hover:bg-bg-hover">
+          <button class="p-1.5 rounded hover:bg-bg-hover" @click="showCitations = false">
             <X class="w-4 h-4" />
           </button>
         </div>

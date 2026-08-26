@@ -59,7 +59,7 @@ onMounted(async () => {
           <div class="text-sm text-text-secondary hidden md:block">
             你好，<span class="text-text-primary font-medium">{{ auth.user?.name }}</span>
           </div>
-          <button @click="logout" class="btn-ghost text-sm">退出</button>
+          <button class="btn-ghost text-sm" @click="logout">退出</button>
         </div>
       </div>
     </header>
@@ -72,7 +72,7 @@ onMounted(async () => {
           <h1 class="font-display font-bold text-3xl">我的知识库</h1>
           <p class="text-text-secondary mt-1">管理你的知识库，开始与文档对话</p>
         </div>
-        <button @click="showCreate = true" class="btn-primary">
+        <button class="btn-primary" @click="showCreate = true">
           <Plus class="w-4 h-4" />
           新建知识库
         </button>
@@ -91,7 +91,7 @@ onMounted(async () => {
         </div>
         <h3 class="font-display font-semibold text-xl mb-2">还没有知识库</h3>
         <p class="text-text-secondary text-sm mb-6">创建第一个知识库，上传文档开始体验</p>
-        <button @click="showCreate = true" class="btn-primary">
+        <button class="btn-primary" @click="showCreate = true">
           <Plus class="w-4 h-4" />
           创建知识库
         </button>
@@ -109,9 +109,9 @@ onMounted(async () => {
               <BookOpen class="w-5 h-5 text-accent-cyan" />
             </div>
             <button
-              @click.stop="kbStore.remove(kb.id)"
               class="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md hover:bg-red-500/10 text-text-muted hover:text-red-400"
               title="删除"
+              @click.stop="kbStore.remove(kb.id)"
             >
               <Trash2 class="w-4 h-4" />
             </button>
@@ -152,8 +152,8 @@ onMounted(async () => {
             <textarea v-model="newDesc" rows="3" placeholder="知识库用途说明..." class="input-field resize-none"></textarea>
           </div>
           <div class="flex gap-3 pt-2">
-            <button @click="showCreate = false" class="btn-ghost flex-1 justify-center">取消</button>
-            <button @click="createKb" :disabled="creating || !newName.trim()" class="btn-primary flex-1 justify-center disabled:opacity-50">
+            <button class="btn-ghost flex-1 justify-center" @click="showCreate = false">取消</button>
+            <button :disabled="creating || !newName.trim()" class="btn-primary flex-1 justify-center disabled:opacity-50" @click="createKb">
               {{ creating ? '创建中...' : '创建' }}
             </button>
           </div>

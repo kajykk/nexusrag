@@ -188,12 +188,12 @@ onMounted(async () => {
 
       <!-- 上传区 -->
       <div
+        class="glass-card p-10 mb-8 cursor-pointer transition-all text-center"
+        :class="dragOver ? 'border-accent-cyan scale-[1.01]' : 'hover:border-accent-cyan/40'"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
         @click="fileInput?.click()"
-        class="glass-card p-10 mb-8 cursor-pointer transition-all text-center"
-        :class="dragOver ? 'border-accent-cyan scale-[1.01]' : 'hover:border-accent-cyan/40'"
       >
         <input
           ref="fileInput"
@@ -258,8 +258,8 @@ onMounted(async () => {
               {{ statusBadge(doc.status)?.text }}
             </span>
             <button
-              @click="removeDoc(doc.id)"
               class="opacity-0 group-hover:opacity-100 p-2 rounded-md hover:bg-red-500/10 text-text-muted hover:text-red-400 transition-all"
+              @click="removeDoc(doc.id)"
             >
               <Trash2 class="w-4 h-4" />
             </button>

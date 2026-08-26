@@ -68,16 +68,16 @@ async function demoLogin() {
         <!-- 模式切换 -->
         <div class="flex p-1 mb-6 rounded-lg bg-bg-elevate">
           <button
-            @click="mode = 'login'"
             class="flex-1 py-2 rounded-md text-sm font-medium transition-all"
             :class="mode === 'login' ? 'bg-bg-card text-text-primary shadow' : 'text-text-muted'"
+            @click="mode = 'login'"
           >
             登录
           </button>
           <button
-            @click="mode = 'register'"
             class="flex-1 py-2 rounded-md text-sm font-medium transition-all"
             :class="mode === 'register' ? 'bg-bg-card text-text-primary shadow' : 'text-text-muted'"
+            @click="mode = 'register'"
           >
             注册
           </button>
@@ -90,7 +90,7 @@ async function demoLogin() {
           {{ mode === 'login' ? '登录以使用你的知识库' : '注册后即可创建专属知识库' }}
         </p>
 
-        <form @submit.prevent="submit" class="space-y-4">
+        <form class="space-y-4" @submit.prevent="submit">
           <div v-if="mode === 'register'">
             <label class="block text-xs text-text-secondary mb-1.5">昵称</label>
             <div class="relative">
@@ -132,7 +132,7 @@ async function demoLogin() {
           <div class="flex-1 h-px bg-border-subtle"></div>
         </div>
 
-        <button @click="demoLogin" :disabled="loading" class="btn-ghost w-full justify-center py-3">
+        <button :disabled="loading" class="btn-ghost w-full justify-center py-3" @click="demoLogin">
           <Zap class="w-4 h-4 text-accent-cyan" />
           一键体验演示账号
         </button>
