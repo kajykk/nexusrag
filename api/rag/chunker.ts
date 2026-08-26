@@ -70,14 +70,16 @@ function splitLongText(text: string, size: number, overlap: number): string[] {
       }
     }
     pieces.push(text.slice(start, end).trim())
-    start = end - overlap
+    // 保证起点严格前进，防止 overlap >= 步长时死循环
+    const nextStart = end - overlap
+    start = nextStart > start ? nextStart : end
   }
   return pieces.filter((p) => p.length > 0)
 }
 
 function findSentenceEnd(text: string, start: number, end: number): number {
-  // 优先级：句号 > 换行 > 空格
-  const markers = /[。！？.!?]/g
+  // 优先级：句号 > 换行 > 空格（不带 /g，避免 lastIndex 状态导致漏检）
+  const markers = /[。！？.!?]/
   let lastMatch = -1
   for (let i = end - 1; i > start; i--) {
     if (markers.test(text[i])) {
@@ -100,7 +102,7 @@ function createChunk(
     chunk_index: index,
     content,
     vector_id: '',  // 后续添加向量时填入
-    token_count: Math.ceil(content.length / 4),  // 粗略估算
+    token_count: estimateTokens(content),
     metadata: {
       page: section.page,
       section: section.section,

@@ -70,6 +70,25 @@ describe('chunkRecursive', () => {
     expect(chunks.length).toBe(1)
     expect(chunks[0].content).toBe('有效内容')
   })
+
+  it('overlap >= chunkSize 时正常终止且所有分段非空', () => {
+    // 回归：旧实现 start = end - overlap 不前进会导致死循环
+    const longText = '字'.repeat(300)
+    const chunks = chunkRecursive([{ content: longText }], 'doc-1', 50, 50)
+    expect(chunks.length).toBeGreaterThan(1)
+    for (const chunk of chunks) {
+      expect(chunk.content.length).toBeGreaterThan(0)
+    }
+  })
+
+  it('超长单段切分保留完整句读边界', () => {
+    const sentence = 'A'.repeat(40) + '。'
+    const text = sentence.repeat(10)
+    const chunks = chunkRecursive([{ content: text }], 'doc-1', 100, 20)
+    expect(chunks.length).toBeGreaterThan(1)
+    // 至少一个分段以句号结尾（说明在句子边界完成切分）
+    expect(chunks.some((c) => c.content.endsWith('。'))).toBe(true)
+  })
 })
 
 describe('estimateTokens', () => {

@@ -37,7 +37,11 @@ export async function ingestDocument(
   // 3. 批量 Embedding
   const vectors = await embedBatch(chunks.map((c) => c.content))
 
-  // 4. 写入 SQLite
+  // 4. 计算向量库当前基数，使 DB 中 vector_id 与向量库实际位置一致
+  //    （事件循环内 count → 事务 → addVectors 之间无 await，单线程下无竞态）
+  const vectorIdBase = vectorStore.count(kbId)
+
+  // 5. 写入 SQLite（含 BM25 索引增量更新）
   const insertChunk = db.prepare(`
     INSERT INTO chunks (id, doc_id, kb_id, chunk_index, content, vector_id, token_count, metadata)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -45,7 +49,7 @@ export async function ingestDocument(
   const tx = db.transaction(() => {
     for (let i = 0; i < chunks.length; i++) {
       const c = chunks[i]
-      const vectorId = `vec_${i}`
+      const vectorId = `vec_${vectorIdBase + i}`
       insertChunk.run(
         c.id, c.doc_id, kbId, c.chunk_index, c.content, vectorId, c.token_count,
         c.metadata ? JSON.stringify(c.metadata) : null,
@@ -56,14 +60,14 @@ export async function ingestDocument(
   })
   tx()
 
-  // 5. 写入向量库
+  // 6. 写入向量库（分配的 id 与上面写入 DB 的 vector_id 一致）
   vectorStore.addVectors(
     kbId,
     chunks.map((c, i) => ({ chunkId: c.id, vector: vectors[i] })),
   )
   await vectorStore.persist(kbId)
 
-  // 6. 更新文档状态
+  // 7. 更新文档状态
   db.prepare(`
     UPDATE documents SET status = 'ready', chunk_count = ? WHERE id = ?
   `).run(chunks.length, docId)
@@ -79,13 +83,11 @@ export async function retrieve(
   query: string,
   topK: number = config.rag.topK,
 ): Promise<RetrievedChunk[]> {
-  // 1. 并行执行双路检索
+  // 1. 向量化查询后执行双路检索（均为内存内同步计算）
   const queryVec = await embed(query)
 
-  const [vecResults, bm25Results] = await Promise.all([
-    Promise.resolve(vectorStore.search(kbId, queryVec, topK * 3)),
-    Promise.resolve(bm25.search(kbId, query, topK * 3)),
-  ])
+  const vecResults = vectorStore.search(kbId, queryVec, topK * 3)
+  const bm25Results = bm25.search(kbId, query, topK * 3)
 
   // 2. RRF 融合
   const rrfK = config.rag.rrfK
@@ -174,13 +176,14 @@ export async function retrieve(
 
 /**
  * 简单 Rerank - 基于关键词重叠度
+ * 使用 BM25 的 tokenize（中英文混合），保证中文查询的重叠度可计算
  * （真实场景应使用 Cohere Rerank 或 BGE Reranker，这里用启发式）
  */
 export function rerank(query: string, results: RetrievedChunk[]): RetrievedChunk[] {
-  const queryTokens = new Set(query.toLowerCase().split(/\s+/))
+  const queryTokens = new Set(bm25.tokenize(query))
   return results
     .map((r) => {
-      const contentTokens = new Set(r.chunk.content.toLowerCase().split(/\s+/))
+      const contentTokens = new Set(bm25.tokenize(r.chunk.content))
       const overlap = [...queryTokens].filter((t) => contentTokens.has(t)).length
       const overlapScore = overlap / (queryTokens.size || 1)
       return {

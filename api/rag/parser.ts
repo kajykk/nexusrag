@@ -5,7 +5,6 @@ import fs from 'fs'
 import path from 'path'
 import pdfParse from 'pdf-parse'
 import mammoth from 'mammoth'
-import { marked } from 'marked'
 
 export interface ParsedSection {
   content: string
@@ -72,7 +71,8 @@ async function parseMarkdown(filePath: string): Promise<ParsedSection[]> {
       sections.unshift({ content: parts[0].trim(), section: 'intro' })
     }
   } else {
-    sections.push({ content: marked.parse(raw, { async: false }) as string })
+    // 无二级标题时保留原始 Markdown 文本（与分节路径一致，避免 HTML 噪声进入向量）
+    sections.push({ content: raw.trim(), section: 'main' })
   }
   return sections
 }
