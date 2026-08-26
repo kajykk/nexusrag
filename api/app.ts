@@ -10,7 +10,7 @@ import cors from 'cors'
 import helmet from 'helmet'
 import rateLimit from 'express-rate-limit'
 import path from 'path'
-import { paramToStr } from './utils/params'
+import { paramToStr } from './utils/params.js'
 import fs from 'fs'
 import dotenv from 'dotenv'
 

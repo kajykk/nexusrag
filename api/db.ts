@@ -95,7 +95,6 @@ export interface DBProxy {
   prepare: (sql: string) => Statement
   exec: (sql: string) => void
   transaction: <T>(fn: () => T) => () => T
-  pragma: (s: string) => void
 }
 
 export interface Statement {
@@ -133,9 +132,6 @@ const proxy: DBProxy = {
         throw err
       }
     }
-  },
-  pragma(_s: string) {
-    // 简化实现
   },
 }
 

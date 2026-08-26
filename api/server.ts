@@ -9,13 +9,12 @@ const PORT = process.env.PORT || 3001
 const server = app.listen(PORT, () => {
   console.log('')
   console.log('  ╔══════════════════════════════════════════════════╗')
-  console.log('  ║                                                  ║')
   console.log('  ║   NexusRAG 智能知识库 后端服务已启动             ║')
-  console.log(`  ║   端口: ${PORT}                                      ║`)
-  console.log(`  ║   模式: ${config.demoMode ? '🎮 Demo (无 LLM)' : '✅ 已配置 LLM'}${' '.repeat(config.demoMode ? 22 - 9 : 22 - 11)}║`)
+  console.log(`  ║   端口: ${PORT}`)
+  console.log(`  ║   模式: ${config.demoMode ? '🎮 Demo (无 LLM)' : '✅ 已配置 LLM'}`)
   if (!config.demoMode) {
-    console.log(`  ║   LLM: ${config.llm.model}${' '.repeat(Math.max(0, 41 - config.llm.model.length))}║`)
-    console.log(`  ║   Embedding: ${config.llm.embeddingModel}${' '.repeat(Math.max(0, 36 - config.llm.embeddingModel.length))}║`)
+    console.log(`  ║   LLM: ${config.llm.model}`)
+    console.log(`  ║   Embedding: ${config.llm.embeddingModel}`)
   }
   console.log('  ║                                                  ║')
   console.log('  ╚══════════════════════════════════════════════════╝')

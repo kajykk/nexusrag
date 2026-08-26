@@ -3,15 +3,21 @@
  */
 import { Router, type Response } from 'express'
 import { v4 as uuid } from 'uuid'
+import { z } from 'zod'
 import db from '../db.js'
 import { authMiddleware, type AuthRequest } from '../middleware/auth.js'
 import { paramToStr } from '../utils/params.js'
 import { ragAnswer } from '../rag/pipeline.js'
 import { runAgentWorkflow } from '../agents/workflow.js'
-import * as bm25 from '../rag/bm25.js'
 import type { ChatMessage, ChatSession, Citation, StreamChunk } from '../types/index.js'
 
 const router = Router({ mergeParams: true })
+
+const sendMessageSchema = z.object({
+  content: z.string().min(1).max(8000),
+  mode: z.enum(['normal', 'agent']).optional(),
+  topK: z.number().int().min(1).max(50).optional(),
+})
 
 router.use(authMiddleware)
 
@@ -58,7 +64,7 @@ router.get('/sessions/:sid/messages', (req: AuthRequest, res: Response): void =>
     JOIN chat_sessions s ON m.session_id = s.id
     JOIN knowledge_bases k ON s.kb_id = k.id
     WHERE m.session_id = ? AND k.user_id = ?
-    ORDER BY m.created_at ASC
+    ORDER BY m.created_at ASC, m.rowid ASC
   `).all(req.params.sid, req.userId) as ChatMessage[]
 
   // 反序列化 citations（DB 中以 JSON 字符串存储）
@@ -89,12 +95,12 @@ router.delete('/sessions/:sid', (req: AuthRequest, res: Response): void => {
  */
 router.post('/sessions/:sid/messages', async (req: AuthRequest, res: Response): Promise<void> => {
   const sid = req.params.sid
-  const { content, mode, topK } = req.body
-
-  if (!content || typeof content !== 'string') {
-    res.status(400).json({ success: false, error: '消息内容不能为空' })
+  const parsed = sendMessageSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ success: false, error: parsed.error.issues[0]?.message })
     return
   }
+  const { content, mode, topK } = parsed.data
 
   // 查会话
   const session = db.prepare(`
@@ -108,9 +114,6 @@ router.post('/sessions/:sid/messages', async (req: AuthRequest, res: Response): 
     return
   }
 
-  // 检查知识库是否有文档
-  bm25.clearCache(session.kb_id)
-
   // 设置 SSE 头
   res.setHeader('Content-Type', 'text/event-stream')
   res.setHeader('Cache-Control', 'no-cache')
@@ -118,7 +121,14 @@ router.post('/sessions/:sid/messages', async (req: AuthRequest, res: Response): 
   res.setHeader('X-Accel-Buffering', 'no')
   res.flushHeaders?.()
 
+  // 客户端中断后不再写入（后台生成自然结束，避免 write after end）
+  let clientGone = false
+  req.on('close', () => {
+    clientGone = true
+  })
+
   const send = (chunk: StreamChunk) => {
+    if (clientGone || res.writableEnded) return
     res.write(`data: ${JSON.stringify(chunk)}\n\n`)
   }
 
@@ -144,7 +154,7 @@ router.post('/sessions/:sid/messages', async (req: AuthRequest, res: Response): 
     // 加载历史
     const history = db.prepare(`
       SELECT role, content FROM chat_messages
-      WHERE session_id = ? ORDER BY created_at ASC
+      WHERE session_id = ? ORDER BY created_at ASC, rowid ASC
     `).all(sid) as { role: 'user' | 'assistant'; content: string }[]
     // 排除刚插入的用户消息
     const historyFiltered = history.slice(0, -1)

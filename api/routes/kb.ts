@@ -17,6 +17,11 @@ const createSchema = z.object({
   description: z.string().max(500).optional().default(''),
 })
 
+const updateSchema = z.object({
+  name: z.string().min(1).max(100).optional(),
+  description: z.string().max(500).optional(),
+})
+
 router.use(authMiddleware)
 
 /**
@@ -89,14 +94,20 @@ router.delete('/:id', (req: AuthRequest, res: Response): void => {
  * 更新
  */
 router.patch('/:id', (req: AuthRequest, res: Response): void => {
+  const parsed = updateSchema.safeParse(req.body)
+  if (!parsed.success) {
+    res.status(400).json({ success: false, error: parsed.error.issues[0]?.message })
+    return
+  }
+
   const kb = db.prepare('SELECT id FROM knowledge_bases WHERE id = ? AND user_id = ?').get(req.params.id, req.userId)
   if (!kb) {
     res.status(404).json({ success: false, error: '知识库不存在' })
     return
   }
 
-  const { name, description } = req.body
-  if (name) db.prepare('UPDATE knowledge_bases SET name = ? WHERE id = ?').run(name, req.params.id)
+  const { name, description } = parsed.data
+  if (name !== undefined) db.prepare('UPDATE knowledge_bases SET name = ? WHERE id = ?').run(name, req.params.id)
   if (description !== undefined) {
     db.prepare('UPDATE knowledge_bases SET description = ? WHERE id = ?').run(description, req.params.id)
   }
