@@ -151,6 +151,8 @@ export function subscribeProgressWithReconnect(
     close() {
       manualClose = true
       clearReconnectTimer()
+      // 手动关闭后重置计数，与接口注释语义一致（下次订阅从 0 开始）
+      retryCount = 0
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.close(1000, 'client close')
       } else if (ws) {

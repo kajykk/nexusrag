@@ -1,14 +1,34 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, nextTick } from 'vue'
-import * as echarts from 'echarts'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+// echarts 按需引入：全量包 gzip 后约 +330KB，项目仅用基础图表
+import * as echarts from 'echarts/core'
+import { BarChart, LineChart, PieChart, ScatterChart } from 'echarts/charts'
+import {
+  GridComponent,
+  LegendComponent,
+  TooltipComponent,
+} from 'echarts/components'
+import { CanvasRenderer } from 'echarts/renderers'
 import { useDatasetStore } from '@/stores/dataset'
 import { useAnalysisStore } from '@/stores/analysis'
 import { analysisApi } from '@/api/analysis'
-import { subscribeProgress } from '@/api/ws'
+import { subscribeProgressWithReconnect, type ReconnectingWSController } from '@/api/ws'
 import { reportsApi } from '@/api/reports'
+import { getApiBase } from '@/api/client'
 import type { AnalysisItem, WSProgressMessage } from '@/api/types'
 
 const datasetStore = useDatasetStore()
+
+echarts.use([
+  BarChart,
+  LineChart,
+  PieChart,
+  ScatterChart,
+  GridComponent,
+  TooltipComponent,
+  LegendComponent,
+  CanvasRenderer,
+])
 const analysisStore = useAnalysisStore()
 
 const selectedDatasetId = ref<number | null>(null)
@@ -16,28 +36,81 @@ const question = ref('')
 const submitting = ref(false)
 const result = ref<AnalysisItem | null>(null)
 const chartContainer = ref<HTMLDivElement | null>(null)
-const chartImageBase = import.meta.env.VITE_API_BASE_URL || ''
-let chartInstance: echarts.ECharts | null = null
-let ws: WebSocket | null = null
+let chartInstance: echarts.EChartsType | null = null
+let wsCtrl: ReconnectingWSController | null = null
+let pollTimer: ReturnType<typeof setInterval> | null = null
 const reportId = ref<number | null>(null)
 const reportMsg = ref('')
 
-onMounted(() => datasetStore.fetchList())
+// 服务端图表经认证端点下发（原匿名静态挂载已移除）
+function chartUrl(item: AnalysisItem | null): string {
+  if (!item) return ''
+  return `${getApiBase()}/analyses/${item.id}/chart`
+}
 
-watch(
-  () => analysisStore.progress.percent,
-  () => {
-    if (analysisStore.progress.stage === 'succeeded' && analysisStore.current) {
-      result.value = analysisStore.current
-      nextTick(() => renderChart())
+onMounted(() => {
+  void datasetStore.fetchList()
+  window.addEventListener('resize', handleResize)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  stopPolling()
+  wsCtrl?.close()
+  wsCtrl = null
+  chartInstance?.dispose()
+  chartInstance = null
+})
+
+function handleResize() {
+  chartInstance?.resize()
+}
+
+function stopPolling() {
+  if (pollTimer !== null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+/** 统一的结果写入出口：所有来源（WS / 轮询）都经过这里，消除双路径竞态 */
+async function applyResult(item: AnalysisItem) {
+  result.value = item
+  analysisStore.updateProgress(
+    item.status === 'succeeded' ? 'succeeded' : 'failed',
+    100,
+    '',
+  )
+  submitting.value = false
+  stopPolling()
+  if (item.status === 'succeeded') {
+    await nextTick()
+    renderChart()
+  }
+}
+
+function startPolling(analysisId: number) {
+  stopPolling()
+  // 兜底轮询：WS 断连或未推送时持续查询任务终态，直到拿到结果
+  pollTimer = setInterval(async () => {
+    try {
+      const item = await analysisApi.detail(analysisId)
+      if (item.status === 'succeeded' || item.status === 'failed') {
+        await applyResult(item)
+      }
+    } catch (e) {
+      console.error('[analysis] 轮询查询失败', e)
     }
-  },
-)
+  }, 4000)
+}
 
 function renderChart() {
-  if (!chartContainer.value || !result.value?.chart_config) return
-  if (!chartInstance) {
-    chartInstance = echarts.init(chartContainer.value)
+  const el = chartContainer.value
+  if (!el || !result.value?.chart_config) return
+  // v-if 销毁重建容器后旧实例绑定 detached DOM：检测到 DOM 变化必须重新 init
+  if (!chartInstance || chartInstance.getDom() !== el) {
+    chartInstance?.dispose()
+    chartInstance = echarts.init(el)
   }
   chartInstance.setOption(result.value.chart_config, true)
 }
@@ -54,38 +127,30 @@ async function submit() {
     // 1. 创建分析任务
     const analysisId = await analysisStore.create(selectedDatasetId.value, question.value)
 
-    // 2. 订阅 WebSocket 进度
-    ws?.close()
-    ws = subscribeProgress(analysisId, (msg: WSProgressMessage) => {
+    // 2. 订阅 WebSocket 进度（断线自动重连）
+    wsCtrl?.close()
+    wsCtrl = subscribeProgressWithReconnect(analysisId, (msg: WSProgressMessage) => {
       analysisStore.updateProgress(msg.stage, msg.progress, msg.message)
 
-      if (msg.stage === 'succeeded') {
-        submitting.value = false
-        analysisStore.fetchDetail(analysisId).then((item) => {
-          result.value = item
-          nextTick(() => renderChart())
-        })
-      } else if (msg.stage === 'failed') {
-        submitting.value = false
+      if (msg.stage === 'succeeded' || msg.stage === 'failed') {
+        if (msg.stage === 'succeeded') {
+          analysisStore.fetchDetail(analysisId)
+            .then((item) => {
+              if (item) void applyResult(item)
+            })
+            .catch((e) => {
+              console.error('[analysis] 结果拉取失败，回退到轮询', e)
+              startPolling(analysisId)
+            })
+        } else {
+          submitting.value = false
+          stopPolling()
+        }
       }
     })
 
-    // 3. 兜底：若 WS 未及时推送，轮询查询
-    setTimeout(async () => {
-      if (submitting.value) {
-        const item = await analysisApi.detail(analysisId)
-        if (item.status === 'succeeded' || item.status === 'failed') {
-          submitting.value = false
-          result.value = item
-          analysisStore.updateProgress(
-            item.status === 'succeeded' ? 'succeeded' : 'failed',
-            100,
-            '',
-          )
-          if (item.status === 'succeeded') nextTick(() => renderChart())
-        }
-      }
-    }, 30000)
+    // 3. 兜底轮询（WS 中断时的恢复通道）
+    startPolling(analysisId)
   } catch (e) {
     submitting.value = false
     analysisStore.updateProgress('failed', 100, e instanceof Error ? e.message : String(e))
@@ -103,8 +168,11 @@ function useQuick(q: string) {
   question.value = q
 }
 
+const generatingReport = ref(false)
+
 async function generateReport() {
-  if (!result.value?.id) return
+  if (!result.value?.id || generatingReport.value) return
+  generatingReport.value = true
   reportMsg.value = '生成中...'
   try {
     const res = await reportsApi.create(result.value.id)
@@ -112,6 +180,8 @@ async function generateReport() {
     reportMsg.value = '报告已生成'
   } catch (e) {
     reportMsg.value = `生成失败：${e instanceof Error ? e.message : String(e)}`
+  } finally {
+    generatingReport.value = false
   }
 }
 
@@ -126,7 +196,8 @@ async function exportPdf() {
   }
 }
 
-function resultRows(): Record<string, unknown>[] {
+// 结果行/列抽为 computed：避免模板嵌套循环内反复重建数组（O(rows×cols×rebuild)）
+const resultRows = computed<Record<string, unknown>[]>(() => {
   const r = result.value?.result_data?.result as
     Record<string, unknown> | Record<string, unknown>[] | undefined
   if (Array.isArray(r) && r.length && typeof r[0] === 'object' && r[0] !== null) {
@@ -145,7 +216,11 @@ function resultRows(): Record<string, unknown>[] {
     return [r as Record<string, unknown>]
   }
   return []
-}
+})
+
+const resultColumns = computed<string[]>(() => Object.keys(resultRows.value[0] ?? {}))
+
+const visibleRows = computed(() => resultRows.value.slice(0, 100))
 </script>
 
 <template>
@@ -272,7 +347,7 @@ function resultRows(): Record<string, unknown>[] {
               服务端渲染（Matplotlib）：
             </p>
             <img
-              :src="chartImageBase + '/' + result.chart_image"
+              :src="chartUrl(result)"
               alt="服务端图表"
             >
           </div>
@@ -280,7 +355,7 @@ function resultRows(): Record<string, unknown>[] {
 
         <!-- 数据表格 -->
         <div
-          v-if="resultRows().length"
+          v-if="resultRows.length"
           class="data-section"
         >
           <h4>📋 数据结果</h4>
@@ -289,7 +364,7 @@ function resultRows(): Record<string, unknown>[] {
               <thead>
                 <tr>
                   <th
-                    v-for="key in Object.keys(resultRows()[0])"
+                    v-for="key in resultColumns"
                     :key="key"
                   >
                     {{ key }}
@@ -298,11 +373,11 @@ function resultRows(): Record<string, unknown>[] {
               </thead>
               <tbody>
                 <tr
-                  v-for="(row, i) in resultRows().slice(0, 100)"
+                  v-for="(row, i) in visibleRows"
                   :key="i"
                 >
                   <td
-                    v-for="key in Object.keys(resultRows()[0])"
+                    v-for="key in resultColumns"
                     :key="key"
                   >
                     {{ row[key] }}
@@ -312,10 +387,10 @@ function resultRows(): Record<string, unknown>[] {
             </table>
           </div>
           <p
-            v-if="resultRows().length > 100"
+            v-if="resultRows.length > 100"
             class="table-foot"
           >
-            仅显示前 100 行，共 {{ resultRows().length }} 行
+            仅显示前 100 行，共 {{ resultRows.length }} 行
           </p>
         </div>
 
@@ -329,9 +404,10 @@ function resultRows(): Record<string, unknown>[] {
         <div class="report-actions">
           <button
             class="btn-outline"
+            :disabled="generatingReport"
             @click="generateReport"
           >
-            {{ reportId ? '重新生成报告' : '生成分析报告' }}
+            {{ generatingReport ? '生成中...' : (reportId ? '重新生成报告' : '生成分析报告') }}
           </button>
           <button
             v-if="reportId"

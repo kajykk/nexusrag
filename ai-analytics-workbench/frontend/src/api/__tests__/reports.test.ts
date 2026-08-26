@@ -3,14 +3,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import client from '../client'
 import { reportsApi } from '../reports'
 
-vi.mock('../client', () => {
+vi.mock('../client', async (importOriginal) => {
   const ax = {
     post: vi.fn(),
     get: vi.fn(),
     defaults: { baseURL: '/api/v1', timeout: 60000 },
     interceptors: { response: { handlers: [] } },
   }
-  return { default: ax }
+  // 保留真实的 getApiBase / API_BASE 等命名导出，仅替换默认的 axios 实例
+  return { ...(await importOriginal<object>()), default: ax }
 })
 
 const mockClient = client as unknown as {

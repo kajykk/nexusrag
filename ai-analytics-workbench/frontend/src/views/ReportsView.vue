@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import MarkdownIt from 'markdown-it'
-import client from '@/api/client'
 import { reportsApi } from '@/api/reports'
 import type { ReportItem } from '@/api/types'
 
@@ -11,11 +10,12 @@ const reports = ref<ReportItem[]>([])
 const loading = ref(false)
 const selected = ref<ReportItem | null>(null)
 const renderedHtml = ref('')
+let viewSeq = 0
 
 async function fetchReports() {
   loading.value = true
   try {
-    reports.value = await client.get('/reports').then((r) => r.data)
+    reports.value = await reportsApi.list()
   } finally {
     loading.value = false
   }
@@ -24,8 +24,19 @@ async function fetchReports() {
 onMounted(fetchReports)
 
 async function viewReport(id: number) {
-  selected.value = await reportsApi.detail(id)
-  renderedHtml.value = md.render(selected.value.content_md || '')
+  const seq = ++viewSeq
+  renderedHtml.value = ''
+  try {
+    const item = await reportsApi.detail(id)
+    // 丢弃过期响应：快速连续点击时防止旧报告覆盖新选择
+    if (seq !== viewSeq) return
+    selected.value = item
+    renderedHtml.value = md.render(item.content_md || '')
+  } catch (e) {
+    if (seq === viewSeq) {
+      console.error('[reports] 详情加载失败', e)
+    }
+  }
 }
 
 async function exportPdf(id: number) {

@@ -1,10 +1,15 @@
-import client from './client'
+import client, { getApiBase } from './client'
 import type { ReportItem } from './types'
 
 export const reportsApi = {
   /** 生成报告 */
   create(analysisId: number, title = '数据分析报告') {
     return client.post('/reports', { analysis_id: analysisId, title }).then((r) => r.data)
+  },
+
+  /** 报告列表 */
+  list(): Promise<ReportItem[]> {
+    return client.get('/reports').then((r) => r.data)
   },
 
   /** 报告详情 */
@@ -17,11 +22,8 @@ export const reportsApi = {
     return client.post(`/reports/${id}/export-pdf`).then((r) => r.data)
   },
 
-  /** PDF 下载链接 */
+  /** PDF 下载链接（与 axios baseURL 同源派生，避免双处拼接漂移） */
   downloadUrl(id: number): string {
-    const base = import.meta.env.VITE_API_BASE_URL
-      ? `${import.meta.env.VITE_API_BASE_URL}/api/v1`
-      : '/api/v1'
-    return `${base}/reports/${id}/download`
+    return `${getApiBase()}/reports/${id}/download`
   },
 }

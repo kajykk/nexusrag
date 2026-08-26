@@ -20,10 +20,8 @@ export default defineConfig({
                 target: 'ws://localhost:8000',
                 ws: true,
             },
-            '/reports': {
-                target: 'http://localhost:8000',
-                changeOrigin: true,
-            },
+            // 注意：不要代理 '/reports' —— 它是 SPA 路由（分析报告页），
+            // 代理会劫持 dev 下对 /reports 的页面刷新请求
         },
     },
 });

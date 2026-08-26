@@ -23,11 +23,22 @@ const routes = [
     component: () => import('@/views/ReportsView.vue'),
     meta: { title: '分析报告' },
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/views/NotFoundView.vue'),
+    meta: { title: '页面不存在' },
+  },
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 页面标题跟随路由
+router.afterEach((to) => {
+  document.title = to.meta.title ? `${to.meta.title} · AI 数据分析工作台` : 'AI 数据分析工作台'
 })
 
 export default router

@@ -7,23 +7,31 @@ export const useDatasetStore = defineStore('dataset', () => {
   const list = ref<DatasetListItem[]>([])
   const current = ref<DatasetDetail | null>(null)
   const loading = ref(false)
+  // 请求序号守卫：慢响应返回时丢弃，防止旧数据覆盖新数据
+  let listSeq = 0
+  let detailSeq = 0
 
   async function fetchList() {
+    const seq = ++listSeq
     loading.value = true
     try {
-      list.value = await datasetsApi.list()
+      const items = await datasetsApi.list()
+      if (seq === listSeq) list.value = items
     } finally {
-      loading.value = false
+      if (seq === listSeq) loading.value = false
     }
   }
 
   async function fetchDetail(id: number) {
+    const seq = ++detailSeq
     loading.value = true
     try {
-      current.value = await datasetsApi.detail(id)
-      return current.value
+      const item = await datasetsApi.detail(id)
+      if (seq !== detailSeq) return current.value
+      current.value = item
+      return item
     } finally {
-      loading.value = false
+      if (seq === detailSeq) loading.value = false
     }
   }
 

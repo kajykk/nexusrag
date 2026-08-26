@@ -32,6 +32,10 @@ yarn-debug.log*
 yarn-error.log*
 coverage/
 *.lcov
+# tsc 项目引用 / vite 配置的编译产物，不应入库
+*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
 
 # 环境变量
 .env

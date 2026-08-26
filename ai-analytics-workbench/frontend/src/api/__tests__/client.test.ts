@@ -74,4 +74,29 @@ describe('api/client - axios 实例与拦截器', () => {
     expect(result).toBeInstanceOf(Promise)
     await expect(result).rejects.toBeInstanceOf(Error)
   })
+
+  it('响应拦截器：错误携带 HTTP 状态码（ApiError.status）', async () => {
+    const rejected = getRejected()
+    const err = { response: { status: 404, data: { detail: '数据集不存在' } }, message: 'Request failed' }
+    await expect(rejected?.(err)).rejects.toMatchObject({ status: 404 })
+  })
+
+  it('响应拦截器：FastAPI 422 的 detail 数组取首条 msg，避免 [object Object]', async () => {
+    const rejected = getRejected()
+    const err = {
+      response: {
+        status: 422,
+        data: { detail: [{ loc: ['body', 'name'], msg: 'Field required', type: 'missing' }] },
+      },
+      message: 'Unprocessable Entity',
+    }
+    await expect(rejected?.(err)).rejects.toThrow('Field required')
+  })
+
+  it('响应拦截器：401 时清理本地 access_token', async () => {
+    localStorage.setItem('access_token', 'stale-token')
+    const rejected = getRejected()
+    await rejected?.({ response: { status: 401, data: {} }, message: 'Unauthorized' }).catch(() => {})
+    expect(localStorage.getItem('access_token')).toBeNull()
+  })
 })

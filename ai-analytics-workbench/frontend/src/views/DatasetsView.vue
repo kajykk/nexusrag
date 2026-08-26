@@ -13,6 +13,7 @@ const uploadError = ref('')
 
 const detailVisible = ref(false)
 const detailData = ref<DatasetDetail | null>(null)
+const actionError = ref('')
 
 onMounted(() => store.fetchList())
 
@@ -44,13 +45,24 @@ async function doUpload() {
 }
 
 async function viewDetail(id: number) {
-  detailData.value = await store.fetchDetail(id)
-  detailVisible.value = true
+  actionError.value = ''
+  try {
+    detailData.value = await store.fetchDetail(id)
+    detailVisible.value = true
+  } catch (e) {
+    actionError.value = `详情加载失败：${e instanceof Error ? e.message : String(e)}`
+  }
 }
 
 async function removeDataset(id: number) {
   if (!confirm('确定删除该数据集？关联的分析任务也会被删除。')) return
-  await store.remove(id)
+  actionError.value = ''
+  try {
+    await store.remove(id)
+  } catch (e) {
+    // 只读遗留行（NULL 属主）删除会被后端拒绝为 404，这里给出可见反馈
+    actionError.value = `删除失败：${e instanceof Error ? e.message : String(e)}`
+  }
 }
 </script>
 
@@ -70,6 +82,14 @@ async function removeDataset(id: number) {
         + 上传数据集
       </button>
     </header>
+
+    <p
+      v-if="actionError"
+      class="error action-error"
+      role="alert"
+    >
+      {{ actionError }}
+    </p>
 
     <!-- 数据集列表 -->
     <div
@@ -402,6 +422,13 @@ async function removeDataset(id: number) {
 .error {
   color: #ef4444;
   font-size: 13px;
+}
+.action-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
 }
 .modal-actions {
   display: flex;

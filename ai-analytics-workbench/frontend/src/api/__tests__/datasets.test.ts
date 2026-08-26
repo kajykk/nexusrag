@@ -25,24 +25,17 @@ afterEach(() => {
 })
 
 describe('api/datasets', () => {
-  it('upload 使用 multipart 上传 FormData（返回完整 axios 响应）', async () => {
+  it('upload 使用 multipart 上传 FormData 并解包 .data', async () => {
     const file = new File(['col1,col2\n1,2\n'], 'test.csv', { type: 'text/csv' })
-    const axiosResponse = {
-      data: { id: 7 },
-      status: 201,
-      statusText: 'Created',
-      headers: {},
-      config: {},
-    }
-    mockClient.post.mockResolvedValueOnce(axiosResponse)
+    const created = { id: 7, name: '我的数据集' }
+    mockClient.post.mockResolvedValueOnce({ data: created })
 
     const res = await datasetsApi.upload(file, '我的数据集', '描述')
 
-    expect(mockClient.post).toHaveBeenCalledWith('/datasets/upload', expect.any(FormData), {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    // datasetsApi.upload 不解包 .data，返回完整 axios 响应
-    expect(res).toEqual(axiosResponse)
+    // 不手动指定 multipart 头（由浏览器生成带 boundary 的 Content-Type）
+    expect(mockClient.post).toHaveBeenCalledWith('/datasets/upload', expect.any(FormData))
+    // 与其它 API 方法契约一致：返回解包后的业务数据
+    expect(res).toEqual(created)
 
     const sentForm = mockClient.post.mock.calls[0][1] as FormData
     expect(sentForm.get('file')).toBe(file)

@@ -13,18 +13,25 @@ export const useAnalysisStore = defineStore('analysis', () => {
     percent: 0,
     message: '',
   })
+  // 请求序号守卫：快速连续触发时丢弃过期响应，防止旧数据覆盖新数据
+  let listSeq = 0
+  let detailSeq = 0
 
   async function fetchList(datasetId?: number) {
+    const seq = ++listSeq
     loading.value = true
     try {
-      list.value = await analysisApi.list(datasetId)
+      const items = await analysisApi.list(datasetId)
+      if (seq === listSeq) list.value = items
     } finally {
-      loading.value = false
+      if (seq === listSeq) loading.value = false
     }
   }
 
   async function fetchDetail(id: number) {
+    const seq = ++detailSeq
     const item = await analysisApi.detail(id)
+    if (seq !== detailSeq) return current.value
     current.value = item
     return item
   }
