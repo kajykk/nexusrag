@@ -25,7 +25,9 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          # 与开发/验证环境一致（engines: >=22；Node24 同时规避 npm10 对
+          # 可选 peer 依赖的过严 lockfile 校验，详见 docs/OPTIMIZATION_REPORT.md）
+          node-version: '24'
           cache: npm
 
       - name: Install dependencies
