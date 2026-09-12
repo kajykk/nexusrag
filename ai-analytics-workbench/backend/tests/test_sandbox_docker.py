@@ -106,7 +106,7 @@ class TestDockerCommandShape:
         mount = next(arg for arg in cmd if arg.endswith(":/work"))
         host_part = mount[: -len(":/work")]
         assert Path(host_part).is_absolute()
-        assert host_part.replace("/", "\\") == os.path.abspath(tmp_path)
+        assert host_part.replace("\\", "/") == os.path.abspath(tmp_path).replace("\\", "/")
         # 入口：包装脚本随工作目录挂入，保证结果协议与黑名单和子进程模式一致
         # （容器内路径为 POSIX 风格，不受宿主平台影响）
         assert cmd[-2:] == ["python", "/work/sandbox_child.py"]
