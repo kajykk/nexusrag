@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6.33.0/schema.json",
+  "ignore": [
+    "ai-analytics-workbench/**",
+    "dist/**",
+    "data/**",
+    "coverage/**"
+  ]
+}

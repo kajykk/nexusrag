@@ -22,8 +22,15 @@ describe('useMarkdown - 引用标记转换', () => {
   it('[1] 被转换为可点击的引用 span', () => {
     const html = render('根据资料[1]可知')
     expect(html).toContain('class="citation-ref"')
-    expect(html).toContain('data-citation=')
+    expect(html).toContain('data-citation-id="1"')
     expect(html).not.toContain('根据资料[1]') // 原始标记已被替换
+  })
+
+  it('引用 span 只内联 id，不包含完整引用对象', () => {
+    const html = render('根据资料[1]可知')
+    expect(html).toContain('data-citation-id="1"')
+    expect(html).not.toContain('文档一') // 完整引用对象不内联在 DOM
+    expect(html).not.toContain('encodeURIComponent')
   })
 
   it('多个连续引用均可转换', () => {

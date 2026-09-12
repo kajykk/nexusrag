@@ -46,6 +46,8 @@ const md = new MarkdownIt({
 })
 
 // 自定义渲染：将 [1] [2] 转换为可点击的引用标记
+// 只在 DOM 中内联引用 id，完整引用对象由 ChatMarkdown 组件持有，
+// 点击时按 id 回查，避免大对象内联在 HTML 中。
 function renderCitations(text: string, citations: Citation[] = []): string {
   if (!citations.length) return text
   // 匹配 [1] [2][3] 这种模式，但避免匹配 Markdown 链接 [text](url)
@@ -53,8 +55,7 @@ function renderCitations(text: string, citations: Citation[] = []): string {
     const num = Number(numStr)
     const c = citations.find((x) => x.id === num)
     if (!c) return match
-    const data = encodeURIComponent(JSON.stringify(c))
-    return `<span class="citation-ref" data-citation="${data}">${num}</span>`
+    return `<span class="citation-ref" data-citation-id="${num}">${num}</span>`
   })
 }
 

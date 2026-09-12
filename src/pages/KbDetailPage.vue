@@ -3,6 +3,9 @@ import { onMounted, onUnmounted, ref, computed } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useKbStore } from '@/stores/kb'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import { useToast, errorMessage } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import { docApi, type Doc } from '@/api/documents'
 import {
   ArrowLeft, Upload, FileText, Trash2, MessageSquare,
@@ -12,6 +15,8 @@ import {
 const props = defineProps<{ id: string }>()
 const auth = useAuthStore()
 const kbStore = useKbStore()
+const toast = useToast()
+const { confirm } = useConfirm()
 const router = useRouter()
 
 const docs = ref<Doc[]>([])
@@ -20,6 +25,8 @@ const uploading = ref(false)
 const dragOver = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
 let pollTimer: ReturnType<typeof setTimeout> | null = null
+// 请求序号：防止快速重进页面时旧请求覆盖新数据
+let docsSeq = 0
 
 const sortedDocs = computed(() => {
   return [...docs.value].sort((a, b) =>
@@ -37,11 +44,14 @@ const stats = computed(() => {
 })
 
 async function fetchDocs() {
+  const seq = ++docsSeq
   loading.value = true
   try {
-    docs.value = await docApi.list(props.id)
+    const result = await docApi.list(props.id)
+    if (seq !== docsSeq) return // 已有更新的请求，丢弃本次结果
+    docs.value = result
   } finally {
-    loading.value = false
+    if (seq === docsSeq) loading.value = false
   }
 }
 
@@ -82,9 +92,10 @@ async function onFiles(files: FileList | File[]) {
     const arr = Array.from(files as FileList)
     const newDocs = await docApi.upload(props.id, arr)
     docs.value.push(...newDocs)
+    toast.success(`已上传 ${newDocs.length} 个文档，正在处理`)
     schedulePoll(1000)
-  } catch (e: any) {
-    alert(e.response?.data?.error || e.message || '上传失败')
+  } catch (e: unknown) {
+    toast.error(errorMessage(e, '上传失败'))
   } finally {
     uploading.value = false
   }
@@ -104,12 +115,20 @@ function onFileChange(e: Event) {
 }
 
 async function removeDoc(docId: string) {
-  if (!confirm('确定删除该文档？相关向量和索引也会一并删除。')) return
+  const doc = docs.value.find((d) => d.id === docId)
+  const ok = await confirm({
+    title: '删除文档',
+    message: `确定删除「${doc?.name || '该文档'}」？相关向量和索引也会一并删除，此操作不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
   try {
     await docApi.delete(props.id, docId)
     docs.value = docs.value.filter((d) => d.id !== docId)
-  } catch (e: any) {
-    alert(e.response?.data?.error || e.message || '删除失败')
+    toast.success('文档已删除')
+  } catch (e: unknown) {
+    toast.error(errorMessage(e, '删除失败'))
   }
 }
 
@@ -151,10 +170,13 @@ onMounted(async () => {
           <ArrowLeft class="w-4 h-4" />
           <span class="text-sm">返回工作台</span>
         </RouterLink>
-        <RouterLink :to="`/chat/${id}`" class="btn-primary text-sm">
-          <MessageSquare class="w-4 h-4" />
-          开始对话
-        </RouterLink>
+        <div class="flex items-center gap-3">
+          <ThemeToggle />
+          <RouterLink :to="`/chat/${id}`" class="btn-primary text-sm">
+            <MessageSquare class="w-4 h-4" />
+            开始对话
+          </RouterLink>
+        </div>
       </div>
     </header>
 
@@ -190,10 +212,15 @@ onMounted(async () => {
       <div
         class="glass-card p-10 mb-8 cursor-pointer transition-all text-center"
         :class="dragOver ? 'border-accent-cyan scale-[1.01]' : 'hover:border-accent-cyan/40'"
+        role="button"
+        tabindex="0"
+        aria-label="上传文档，支持 PDF、Word、Markdown、TXT"
         @dragover.prevent="dragOver = true"
         @dragleave.prevent="dragOver = false"
         @drop.prevent="onDrop"
         @click="fileInput?.click()"
+        @keydown.enter.prevent="fileInput?.click()"
+        @keydown.space.prevent="fileInput?.click()"
       >
         <input
           ref="fileInput"
@@ -221,9 +248,15 @@ onMounted(async () => {
           <h3 class="font-display font-semibold">文档列表</h3>
         </div>
 
-        <div v-if="loading" class="p-12 text-center text-text-secondary">
-          <Loader2 class="w-5 h-5 animate-spin inline mr-2" />
-          加载中...
+        <div v-if="loading" class="divide-y divide-border-subtle">
+          <div v-for="i in 5" :key="i" class="px-6 py-4 flex items-center gap-4 animate-pulse">
+            <div class="w-10 h-10 rounded-lg bg-bg-elevate shrink-0"></div>
+            <div class="flex-1 min-w-0">
+              <div class="h-4 bg-bg-elevate rounded w-1/3 mb-2"></div>
+              <div class="h-3 bg-bg-elevate rounded w-1/2"></div>
+            </div>
+            <div class="w-16 h-6 bg-bg-elevate rounded-full shrink-0"></div>
+          </div>
         </div>
 
         <div v-else-if="sortedDocs.length === 0" class="p-12 text-center text-text-muted">
@@ -259,6 +292,7 @@ onMounted(async () => {
             </span>
             <button
               class="opacity-0 group-hover:opacity-100 p-2 rounded-md hover:bg-red-500/10 text-text-muted hover:text-red-400 transition-all"
+              aria-label="删除文档"
               @click="removeDoc(doc.id)"
             >
               <Trash2 class="w-4 h-4" />

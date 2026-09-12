@@ -1,5 +1,11 @@
 name: CI
 
+# 注意：本文件在合并进 kajykk/nexusrag 根仓库后不再独立触发
+# （GitHub Actions 仅识别根仓库 .github/workflows/ 下的文件）。
+# workbench 的测试已并入根 .github/workflows/nexusrag-ci.yml 的
+# workbench-backend / workbench-frontend job，docker 沙箱验证在
+# ubuntu-latest（自带 Docker）上真实执行。本文件仅作历史参考保留。
+
 on:
   push:
     branches: [main, master]

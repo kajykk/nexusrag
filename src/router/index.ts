@@ -34,6 +34,11 @@ const routes = [
     meta: { requiresAuth: true },
     props: true,
   },
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('@/pages/NotFoundPage.vue'),
+  },
 ]
 
 const router = createRouter({

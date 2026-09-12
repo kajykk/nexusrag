@@ -5,15 +5,21 @@ import { useAuthStore } from '@/stores/auth'
 import { chatApi, type ChatMessage } from '@/api/chat'
 import { kbApi, type KnowledgeBase } from '@/api/kb'
 import ChatMarkdown from '@/components/ChatMarkdown.vue'
+import CitationPanel from '@/components/CitationPanel.vue'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import { useToast, errorMessage } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
 import type { Citation } from '@/api/types'
 import {
   Sparkles, ArrowLeft, Send, Plus, Trash2, MessageSquare,
-  Loader2, Brain, Zap, BookOpen, ChevronDown, Quote, X,
+  Loader2, Brain, Zap, BookOpen, ChevronDown, Quote,
 } from 'lucide-vue-next'
 
 const props = defineProps<{ kbId: string; sessionId?: string }>()
 const auth = useAuthStore()
 const router = useRouter()
+const toast = useToast()
+const { confirm } = useConfirm()
 
 interface Msg {
   id: string
@@ -32,8 +38,10 @@ const input = ref('')
 const mode = ref<'normal' | 'agent'>('normal')
 const sending = ref(false)
 const loadingHistory = ref(false)
+const loadingSessions = ref(false)
 const showCitations = ref(false)
 const activeCitations = ref<Citation[]>([])
+const highlightCitationId = ref<number | null>(null)
 const messagesContainer = ref<HTMLElement | null>(null)
 
 const status = computed(() => {
@@ -63,19 +71,28 @@ function scheduleScroll() {
 }
 
 async function fetchSessions() {
+  loadingSessions.value = true
   try {
     sessions.value = await chatApi.listSessions(props.kbId)
   } catch {
     // ignore
+  } finally {
+    loadingSessions.value = false
   }
 }
 
+// 会话切换序号：快速切换时丢弃过期响应
+let sessionSeq = 0
+
 async function selectSession(sid: string) {
+  if (sending.value) return
+  const seq = ++sessionSeq
   currentSessionId.value = sid
   loadingHistory.value = true
   messages.value = []
   try {
     const history = await chatApi.getMessages(props.kbId, sid)
+    if (seq !== sessionSeq) return // 已切换到其他会话
     messages.value = history.map((m: ChatMessage) => ({
       id: m.id,
       role: m.role as 'user' | 'assistant',
@@ -85,12 +102,15 @@ async function selectSession(sid: string) {
     }))
     await scrollToBottom()
   } finally {
-    loadingHistory.value = false
+    if (seq === sessionSeq) loadingHistory.value = false
   }
+  if (seq !== sessionSeq) return
   router.replace(`/chat/${props.kbId}/${sid}`)
 }
 
 async function newSession() {
+  if (sending.value) return
+  sessionSeq++ // 使进行中的会话加载失效
   currentSessionId.value = null
   messages.value = []
   router.replace(`/chat/${props.kbId}`)
@@ -112,8 +132,8 @@ async function send() {
       currentSessionId.value = s.id
       router.replace(`/chat/${props.kbId}/${s.id}`)
       fetchSessions()
-    } catch (e: any) {
-      alert(e.response?.data?.error || e.message || '创建会话失败')
+    } catch (e: unknown) {
+      toast.error(errorMessage(e, '创建会话失败'))
       sending.value = false
       return
     }
@@ -176,17 +196,41 @@ function onInputKeydown(e: KeyboardEvent) {
   }
 }
 
-function showCitationPanel(citations?: Citation[]) {
+function showCitationPanel(citations?: Citation[], highlightId?: number) {
   if (!citations || citations.length === 0) return
   activeCitations.value = citations
+  highlightCitationId.value = highlightId ?? null
   showCitations.value = true
 }
 
+function onCitationClick(c: Citation) {
+  // 回查该引用所属消息的完整引用列表，以便面板展示
+  // 显式 .value 解包：避免 vue-tsc 2.x 对 Ref 类型在回调中的推断歧义
+  const msg = messages.value.find(m => m.citations?.some(ct => ct.id === c.id))
+  if (msg?.citations) {
+    showCitationPanel(msg.citations, c.id)
+  } else {
+    showCitationPanel([c], c.id)
+  }
+}
+
 async function deleteSession(sid: string) {
-  if (!confirm('删除该会话？')) return
-  await chatApi.deleteSession(props.kbId, sid)
-  sessions.value = sessions.value.filter((s) => s.id !== sid)
-  if (currentSessionId.value === sid) newSession()
+  const s = sessions.value.find((x) => x.id === sid)
+  const ok = await confirm({
+    title: '删除会话',
+    message: `确定删除会话「${s?.title || '新对话'}」？对话记录将不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await chatApi.deleteSession(props.kbId, sid)
+    sessions.value = sessions.value.filter((x) => x.id !== sid)
+    if (currentSessionId.value === sid) newSession()
+    toast.success('会话已删除')
+  } catch (e: unknown) {
+    toast.error(errorMessage(e, '删除失败'))
+  }
 }
 
 onMounted(async () => {
@@ -225,7 +269,7 @@ onMounted(async () => {
       </div>
 
       <div class="p-3">
-        <button class="btn-ghost w-full justify-center text-sm" @click="newSession">
+        <button class="btn-ghost w-full justify-center text-sm" :disabled="sending" @click="newSession">
           <Plus class="w-4 h-4" />
           新对话
         </button>
@@ -233,14 +277,21 @@ onMounted(async () => {
 
       <div class="flex-1 overflow-y-auto px-2 pb-2">
         <div class="text-xs text-text-muted px-2 py-2">历史会话</div>
-        <div v-if="sessions.length === 0" class="px-3 py-6 text-center text-text-muted text-sm">
+        <div v-if="loadingSessions" class="px-2 py-1 space-y-2">
+          <div v-for="i in 4" :key="i" class="h-14 bg-bg-elevate rounded-lg animate-pulse"></div>
+        </div>
+        <div v-else-if="sessions.length === 0" class="px-3 py-6 text-center text-text-muted text-sm">
           暂无历史
         </div>
         <button
           v-for="s in sessions"
           :key="s.id"
           class="group w-full text-left px-3 py-2 rounded-lg mb-1 transition-colors flex items-center gap-2"
-          :class="currentSessionId === s.id ? 'bg-bg-elevate text-text-primary' : 'hover:bg-bg-hover text-text-secondary'"
+          :class="[
+            currentSessionId === s.id ? 'bg-bg-elevate text-text-primary' : 'hover:bg-bg-hover text-text-secondary',
+            sending ? 'opacity-60 cursor-not-allowed' : '',
+          ]"
+          :disabled="sending"
           @click="selectSession(s.id)"
         >
           <MessageSquare class="w-4 h-4 shrink-0 opacity-50" />
@@ -249,12 +300,14 @@ onMounted(async () => {
             <div class="text-xs text-text-muted">{{ new Date(s.created_at).toLocaleDateString('zh-CN') }}</div>
           </div>
           <span v-if="s.mode === 'agent'" class="badge badge-violet text-[10px]">Agent</span>
-          <span
-            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 hover:text-red-400 transition-all"
+          <button
+            class="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-red-500/10 hover:text-red-400 transition-all disabled:opacity-0"
+            :disabled="sending"
+            aria-label="删除会话"
             @click.stop="deleteSession(s.id)"
           >
             <Trash2 class="w-3 h-3" />
-          </span>
+          </button>
         </button>
       </div>
     </aside>
@@ -266,16 +319,18 @@ onMounted(async () => {
         <div class="flex items-center gap-3">
           <div class="flex p-1 rounded-lg bg-bg-elevate">
             <button
-              class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+              class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
               :class="mode === 'normal' ? 'bg-bg-card text-accent-cyan shadow' : 'text-text-muted hover:text-text-primary'"
+              :disabled="sending"
               @click="mode = 'normal'"
             >
               <Zap class="w-3.5 h-3.5" />
               普通 RAG
             </button>
             <button
-              class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5"
+              class="px-3 py-1.5 rounded-md text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
               :class="mode === 'agent' ? 'bg-bg-card text-accent-violet shadow' : 'text-text-muted hover:text-text-primary'"
+              :disabled="sending"
               @click="mode = 'agent'"
             >
               <Brain class="w-3.5 h-3.5" />
@@ -283,10 +338,13 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-        <RouterLink :to="`/kb/${kbId}`" class="text-sm text-text-secondary hover:text-text-primary flex items-center gap-2">
-          <BookOpen class="w-4 h-4" />
-          管理文档
-        </RouterLink>
+        <div class="flex items-center gap-3">
+          <ThemeToggle />
+          <RouterLink :to="`/kb/${kbId}`" class="text-sm text-text-secondary hover:text-text-primary flex items-center gap-2">
+            <BookOpen class="w-4 h-4" />
+            管理文档
+          </RouterLink>
+        </div>
       </header>
 
       <!-- 消息列表 -->
@@ -317,9 +375,31 @@ onMounted(async () => {
             </div>
           </div>
 
-          <!-- 加载中 -->
-          <div v-else-if="loadingHistory" class="text-center py-20 text-text-secondary">
-            <Loader2 class="w-6 h-6 animate-spin inline" />
+          <!-- 加载中：消息骨架 -->
+          <div v-else-if="loadingHistory" class="space-y-6 pt-6 animate-pulse">
+            <div class="flex gap-4">
+              <div class="w-9 h-9 rounded-lg bg-bg-elevate shrink-0"></div>
+              <div class="flex-1 space-y-2">
+                <div class="h-3 bg-bg-elevate rounded w-16"></div>
+                <div class="h-4 bg-bg-elevate rounded w-2/3"></div>
+                <div class="h-4 bg-bg-elevate rounded w-1/2"></div>
+              </div>
+            </div>
+            <div class="flex gap-4 justify-end">
+              <div class="flex-1 max-w-[60%] space-y-2">
+                <div class="h-3 bg-bg-elevate rounded w-16 ml-auto"></div>
+                <div class="h-4 bg-bg-elevate rounded w-full"></div>
+              </div>
+              <div class="w-9 h-9 rounded-lg bg-bg-elevate shrink-0"></div>
+            </div>
+            <div class="flex gap-4">
+              <div class="w-9 h-9 rounded-lg bg-bg-elevate shrink-0"></div>
+              <div class="flex-1 space-y-2">
+                <div class="h-3 bg-bg-elevate rounded w-16"></div>
+                <div class="h-4 bg-bg-elevate rounded w-3/4"></div>
+                <div class="h-4 bg-bg-elevate rounded w-1/3"></div>
+              </div>
+            </div>
           </div>
 
           <!-- 消息 -->
@@ -363,6 +443,7 @@ onMounted(async () => {
                     v-if="msg.content"
                     :content="msg.content"
                     :citations="msg.citations"
+                    @citation-click="onCitationClick"
                   />
 
                   <!-- 引用 -->
@@ -416,35 +497,12 @@ onMounted(async () => {
 
     <!-- 引用面板（侧滑） -->
     <transition name="slide">
-      <aside v-if="showCitations" class="absolute right-0 top-0 bottom-0 w-96 bg-bg-card border-l border-border-subtle z-30 overflow-y-auto">
-        <div class="sticky top-0 bg-bg-card/95 backdrop-blur border-b border-border-subtle px-5 py-3 flex items-center justify-between">
-          <div class="flex items-center gap-2">
-            <Quote class="w-4 h-4 text-accent-cyan" />
-            <h3 class="font-display font-semibold">引用来源</h3>
-            <span class="badge badge-cyan">{{ activeCitations.length }}</span>
-          </div>
-          <button class="p-1.5 rounded hover:bg-bg-hover" @click="showCitations = false">
-            <X class="w-4 h-4" />
-          </button>
-        </div>
-        <div class="p-5 space-y-4">
-          <div v-for="c in activeCitations" :key="c.id" class="glass-card p-4">
-            <div class="flex items-center justify-between mb-2">
-              <div class="flex items-center gap-2">
-                <div class="w-7 h-7 rounded-md bg-accent-cyan/10 text-accent-cyan font-mono font-bold text-sm flex items-center justify-center">
-                  {{ c.id }}
-                </div>
-                <div class="text-sm font-medium truncate">{{ c.docName }}</div>
-              </div>
-              <div v-if="c.page" class="text-xs text-text-muted">P. {{ c.page }}</div>
-            </div>
-            <div class="text-sm text-text-secondary leading-relaxed border-l-2 border-accent-cyan/30 pl-3 italic">
-              {{ c.content }}
-            </div>
-            <div class="text-xs text-text-muted mt-2">相关度：{{ (c.score * 100).toFixed(1) }}%</div>
-          </div>
-        </div>
-      </aside>
+      <CitationPanel
+        v-if="showCitations"
+        :citations="activeCitations"
+        :highlight-id="highlightCitationId"
+        @close="showCitations = false"
+      />
     </transition>
   </div>
 </template>

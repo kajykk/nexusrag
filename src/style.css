@@ -1,10 +1,21 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
-
 :root {
+  /* 暗色主题（默认） */
+  --bg-base: 10 10 15;      /* #0A0A0F */
+  --bg-card: 19 19 26;      /* #13131A */
+  --bg-elevate: 26 26 36;   /* #1A1A24 */
+  --bg-hover: 34 34 46;     /* #22222E */
+  --text-primary: 250 250 250; /* #FAFAFA */
+  --text-secondary: 156 163 175; /* #9CA3AF */
+  --text-muted: 107 114 128;  /* #6B7280 */
+  --border-subtle: 42 42 56;  /* #2A2A38 */
+  --border-default: 58 58 74; /* #3A3A4A */
+
   font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   line-height: 1.5;
   font-weight: 400;
@@ -16,14 +27,29 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/* 亮色主题 */
+.light {
+  --bg-base: 246 247 249;   /* #F6F7F9 */
+  --bg-card: 255 255 255;   /* #FFFFFF */
+  --bg-elevate: 238 241 246; /* #EEF1F6 */
+  --bg-hover: 227 231 239;  /* #E3E7EF */
+  --text-primary: 15 23 42; /* #0F172A */
+  --text-secondary: 71 85 105; /* #475569 */
+  --text-muted: 148 163 184; /* #94A3B8 */
+  --border-subtle: 226 232 240; /* #E2E8F0 */
+  --border-default: 203 213 225; /* #CBD5E1 */
+
+  color-scheme: light;
+}
+
 html,
 body,
 #app {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: #0A0A0F;
-  color: #FAFAFA;
+  background-color: rgb(var(--bg-base));
+  color: rgb(var(--text-primary));
 }
 
 /* 滚动条样式 */
@@ -35,11 +61,11 @@ body,
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #2A2A38;
+  background: rgb(var(--border-subtle));
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #3A3A4A;
+  background: rgb(var(--border-default));
 }
 
 /* 通用工具类 */

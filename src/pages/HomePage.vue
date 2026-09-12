@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Github, Sparkles, BookOpen, Zap, Shield, FileText, Brain, MessageSquare } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -95,6 +96,7 @@ const stack = [
           <RouterLink v-else to="/dashboard" class="btn-primary text-sm">
             进入工作台
           </RouterLink>
+          <ThemeToggle />
           <a href="https://github.com" target="_blank" class="btn-ghost text-sm" aria-label="GitHub">
             <Github class="w-4 h-4" />
           </a>

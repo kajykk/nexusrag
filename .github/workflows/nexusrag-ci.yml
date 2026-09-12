@@ -12,6 +12,9 @@ on:
       - 'tsconfig.json'
       - 'eslint.config.js'
       - 'vitest.config.ts'
+      - 'ai-analytics-workbench/backend/**'
+      - 'ai-analytics-workbench/frontend/**'
+      - 'ai-analytics-workbench/docker-compose.yml'
       - '.github/workflows/nexusrag-ci.yml'
   pull_request:
     branches: [main, master]
@@ -41,6 +44,87 @@ jobs:
 
       - name: Vitest
         run: npx vitest run
+
+      - name: Build
+        run: npm run build
+
+  # ai-analytics-workbench 子项目（合并后随根仓库 CI 触发）：
+  # ubuntu-latest 自带 Docker 引擎，docker 模式沙箱测试在此真实执行
+  # （--network=none + cgroups 硬限 + docker kill 超时击杀），
+  # 消除"Windows 无 seccomp / docker 模式未验证"的声明性弱点。
+  workbench-backend:
+    name: Workbench Backend (pytest + docker sandbox)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-analytics-workbench/backend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: ai-analytics-workbench/backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Lint (ruff)
+        run: ruff check app tests
+
+      # 保持默认 SANDBOX_MODE=subprocess（普通分析测试走子进程，快且稳）；
+      # docker 容器级沙箱测试（test_sandbox_docker.py）经其 fixture 在
+      # docker 引擎可用时自动切换 SANDBOX_MODE=docker，真实验证
+      # --network=none + cgroups 硬限 + docker kill 超时击杀。
+      - name: Run pytest (incl. docker sandbox)
+        env:
+          DATABASE_URL: "sqlite:///:memory:"
+          SECRET_KEY: ci-secret-not-for-prod
+          OPENAI_API_KEY: test-key
+          REDIS_HOST: localhost
+          CELERY_BROKER_URL: "memory://"
+          CELERY_RESULT_BACKEND: "cache+memory://"
+          APP_ENV: test
+          APP_DEBUG: 'false'
+          CORS_ORIGINS: http://localhost:5173
+        run: pytest -q
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workbench-backend-coverage
+          path: ai-analytics-workbench/backend/htmlcov/
+          retention-days: 7
+
+  workbench-frontend:
+    name: Workbench Frontend (vitest + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-analytics-workbench/frontend
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ai-analytics-workbench/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run type-check
+
+      - name: Run vitest
+        run: npm test
 
       - name: Build
         run: npm run build

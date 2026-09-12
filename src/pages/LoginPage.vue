@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import { useRouter, useRoute, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import ThemeToggle from '@/components/ThemeToggle.vue'
 import { Sparkles, Mail, Lock, User, ArrowRight, Zap } from 'lucide-vue-next'
 
 const auth = useAuthStore()
@@ -52,6 +53,10 @@ async function demoLogin() {
     <!-- 背景 -->
     <div class="absolute inset-0 bg-grid-pattern bg-grid-lg opacity-40 pointer-events-none"></div>
     <div class="absolute top-1/4 left-1/3 w-[500px] h-[500px] bg-radial-glow rounded-full animate-pulse-glow pointer-events-none"></div>
+
+    <div class="absolute top-4 right-4 z-20">
+      <ThemeToggle />
+    </div>
 
     <div class="relative z-10 w-full max-w-md">
       <RouterLink to="/" class="flex items-center justify-center gap-3 mb-8 group">

@@ -77,7 +77,7 @@ ai-analytics-workbench/
 ├── README.md
 ├── LICENSE
 │
-├── .github/workflows/          # CI（pytest + 前端测试）
+├── .github/workflows/          # CI（并入根仓库 NexusRAG CI 触发）
 │
 ├── backend/                    # FastAPI 后端
 │   ├── Dockerfile
@@ -284,6 +284,7 @@ npm run dev
 
 - docker 模式下镜像本地不存在会自动 `docker pull`；引擎不可用、pull 失败或依赖准备失败时**自动回退 subprocess 并记录 warning**，业务不中断。
 - 如实说明：Docker daemon 自身攻击面（socket 权限、镜像供应链）不在沙箱防护范围内。
+- **CI 验证**：docker 模式在根仓库 CI（`.github/workflows/nexusrag-ci.yml` 的 `workbench-backend` job，ubuntu-latest 自带 Docker）上真实执行容器级测试（`--network=none` 硬隔离、cgroups 资源上限、`docker kill` 超时击杀均在 Linux 上验证），消除"Windows 无 seccomp / docker 模式未验证"的声明性弱点。
 
 ---
 

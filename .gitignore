@@ -24,6 +24,9 @@ uploads/
 .env
 .env.local
 
+# AI 协作/合并过程产物（子项目 git 历史快照，不入库）
+ai-analytics-workbench_git_history/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

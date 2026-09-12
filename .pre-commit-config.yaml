@@ -6,3 +6,15 @@
         entry: E:/code/.tools/gitleaks.exe protect --staged --redact -v
         language: system
         pass_filenames: false
+
+  # ===== Frontend: ESLint =====
+  - repo: local
+    hooks:
+      - id: eslint
+        name: ESLint (frontend)
+        # 用 npx 解析本地 node_modules 中的 eslint（直接写 eslint 会因不在 PATH 而报 not found）
+        entry: npx eslint .
+        language: system
+        files: ^(src|api)/.*\.(vue|ts|tsx|js|jsx)$
+        pass_filenames: false
+        types: [file]

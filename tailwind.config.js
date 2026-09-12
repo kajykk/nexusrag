@@ -10,10 +10,10 @@ export default {
     extend: {
       colors: {
         bg: {
-          base: '#0A0A0F',
-          card: '#13131A',
-          elevate: '#1A1A24',
-          hover: '#22222E',
+          base: 'rgb(var(--bg-base) / <alpha-value>)',
+          card: 'rgb(var(--bg-card) / <alpha-value>)',
+          elevate: 'rgb(var(--bg-elevate) / <alpha-value>)',
+          hover: 'rgb(var(--bg-hover) / <alpha-value>)',
         },
         accent: {
           cyan: '#00D9FF',
@@ -21,13 +21,13 @@ export default {
           pink: '#FF2E97',
         },
         text: {
-          primary: '#FAFAFA',
-          secondary: '#9CA3AF',
-          muted: '#6B7280',
+          primary: 'rgb(var(--text-primary) / <alpha-value>)',
+          secondary: 'rgb(var(--text-secondary) / <alpha-value>)',
+          muted: 'rgb(var(--text-muted) / <alpha-value>)',
         },
         border: {
-          subtle: '#2A2A38',
-          DEFAULT: '#3A3A4A',
+          subtle: 'rgb(var(--border-subtle) / <alpha-value>)',
+          DEFAULT: 'rgb(var(--border-default) / <alpha-value>)',
         },
       },
       fontFamily: {

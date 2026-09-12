@@ -1,18 +1,31 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRouter, RouterLink } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useKbStore } from '@/stores/kb'
-import { Sparkles, Plus, BookOpen, MessageSquare, Trash2, ArrowRight, Loader2 } from 'lucide-vue-next'
+import ThemeToggle from '@/components/ThemeToggle.vue'
+import { useToast, errorMessage } from '@/composables/useToast'
+import { useConfirm } from '@/composables/useConfirm'
+import { Sparkles, Plus, BookOpen, MessageSquare, Trash2, ArrowRight } from 'lucide-vue-next'
 
 const auth = useAuthStore()
 const kbStore = useKbStore()
+const toast = useToast()
+const { confirm } = useConfirm()
 const router = useRouter()
 
 const showCreate = ref(false)
 const newName = ref('')
 const newDesc = ref('')
 const creating = ref(false)
+const nameInput = ref<HTMLInputElement | null>(null)
+
+// 打开弹窗时聚焦名称输入框
+watch(showCreate, (open) => {
+  if (open) {
+    requestAnimationFrame(() => nameInput.value?.focus())
+  }
+})
 
 async function createKb() {
   if (!newName.value.trim()) return
@@ -25,6 +38,22 @@ async function createKb() {
     router.push(`/kb/${kb.id}`)
   } finally {
     creating.value = false
+  }
+}
+
+async function removeKb(kb: { id: string; name: string }) {
+  const ok = await confirm({
+    title: '删除知识库',
+    message: `确定删除「${kb.name}」？该知识库下的所有文档与对话记录将一并删除，此操作不可恢复。`,
+    confirmText: '删除',
+    danger: true,
+  })
+  if (!ok) return
+  try {
+    await kbStore.remove(kb.id)
+    toast.success('知识库已删除')
+  } catch (e) {
+    toast.error(errorMessage(e, '删除失败'))
   }
 }
 
@@ -59,6 +88,7 @@ onMounted(async () => {
           <div class="text-sm text-text-secondary hidden md:block">
             你好，<span class="text-text-primary font-medium">{{ auth.user?.name }}</span>
           </div>
+          <ThemeToggle />
           <button class="btn-ghost text-sm" @click="logout">退出</button>
         </div>
       </div>
@@ -78,10 +108,18 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- 加载中 -->
-      <div v-if="kbStore.loading" class="flex items-center justify-center py-20 text-text-secondary">
-        <Loader2 class="w-5 h-5 animate-spin mr-2" />
-        加载中...
+      <!-- 加载中：骨架屏 -->
+      <div v-if="kbStore.loading" class="grid md:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div v-for="i in 6" :key="i" class="glass-card p-5 animate-pulse">
+          <div class="w-11 h-11 rounded-lg bg-bg-elevate mb-4"></div>
+          <div class="h-4 bg-bg-elevate rounded w-2/3 mb-2"></div>
+          <div class="h-3 bg-bg-elevate rounded w-full mb-1"></div>
+          <div class="h-3 bg-bg-elevate rounded w-4/5 mb-5"></div>
+          <div class="flex gap-2">
+            <div class="h-9 bg-bg-elevate rounded-lg flex-1"></div>
+            <div class="h-9 bg-bg-elevate rounded-lg flex-1"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 空状态 -->
@@ -111,7 +149,8 @@ onMounted(async () => {
             <button
               class="opacity-0 group-hover:opacity-100 transition-opacity p-2 rounded-md hover:bg-red-500/10 text-text-muted hover:text-red-400"
               title="删除"
-              @click.stop="kbStore.remove(kb.id)"
+              aria-label="删除知识库"
+              @click.stop="removeKb(kb)"
             >
               <Trash2 class="w-4 h-4" />
             </button>
@@ -139,17 +178,25 @@ onMounted(async () => {
     </main>
 
     <!-- 创建知识库 Modal -->
-    <div v-if="showCreate" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" @click.self="showCreate = false">
+    <div
+      v-if="showCreate"
+      class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-label="新建知识库"
+      @click.self="showCreate = false"
+      @keydown.esc="showCreate = false"
+    >
       <div class="glass-card p-6 w-full max-w-md animate-slide-up">
         <h3 class="font-display font-bold text-xl mb-4">新建知识库</h3>
         <div class="space-y-4">
           <div>
-            <label class="block text-xs text-text-secondary mb-1.5">名称</label>
-            <input v-model="newName" type="text" placeholder="例如：技术文档库" class="input-field" />
+            <label class="block text-xs text-text-secondary mb-1.5" for="kb-name">名称</label>
+            <input id="kb-name" ref="nameInput" v-model="newName" type="text" placeholder="例如：技术文档库" class="input-field" />
           </div>
           <div>
-            <label class="block text-xs text-text-secondary mb-1.5">描述（可选）</label>
-            <textarea v-model="newDesc" rows="3" placeholder="知识库用途说明..." class="input-field resize-none"></textarea>
+            <label class="block text-xs text-text-secondary mb-1.5" for="kb-desc">描述（可选）</label>
+            <textarea id="kb-desc" v-model="newDesc" rows="3" placeholder="知识库用途说明..." class="input-field resize-none"></textarea>
           </div>
           <div class="flex gap-3 pt-2">
             <button class="btn-ghost flex-1 justify-center" @click="showCreate = false">取消</button>
