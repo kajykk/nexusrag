@@ -39,5 +39,5 @@ tenacity==9.0.0
 
 # 认证（P0 新增）
 bcrypt==4.2.0
-PyJWT==2.9.0
+PyJWT==2.13.0
 email-validator==2.3.0
