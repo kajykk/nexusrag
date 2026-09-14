@@ -23,7 +23,7 @@ matplotlib==3.11.1
 seaborn==0.13.2
 
 # LLM
-openai==1.51.0
+openai==3.13.0
 
 # 报告导出
 markdown==3.7
